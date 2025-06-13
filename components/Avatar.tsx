@@ -10,7 +10,7 @@ function Background() {
   const texture = useLoader(THREE.TextureLoader, '/images/background.png');
   
   return (
-    <mesh position={[0, 1.5, -1.5]} scale={[3, 2.5, 1]}>
+    <mesh position={[0, 1.71, -1.5]} scale={[2.96, 1.48, 1]}>
       <planeGeometry args={[1, 1]} />
       <meshBasicMaterial map={texture} />
     </mesh>
@@ -112,6 +112,26 @@ function AvatarModel({ avatarId, isPlaying, audioElement, emotion = 'neutral', o
     return 2000 + Math.random() * 4000;
   }, []);
 
+  // Fast double blink function
+  const triggerDoubleBlink = useCallback(() => {
+    const currentTime = Date.now();
+    
+    // First blink
+    setIsBlinking(true);
+    setBlinkStartTime(currentTime);
+    
+    // Schedule second blink after first one completes
+    setTimeout(() => {
+      setIsBlinking(true);
+      setBlinkStartTime(Date.now());
+    }, 200); // 200ms delay between blinks
+    
+    // Reset normal blinking schedule after double blink
+    setTimeout(() => {
+      setNextBlinkTime(Date.now() + getNextBlinkDelay());
+    }, 500);
+  }, [getNextBlinkDelay]);
+
   // Load avatar
   useEffect(() => {
     const loadAvatarModel = async () => {
@@ -185,9 +205,14 @@ function AvatarModel({ avatarId, isPlaying, audioElement, emotion = 'neutral', o
       
       // Handle blinking
       if (!isBlinking && currentTime >= nextBlinkTime) {
-        // Start a new blink
-        setIsBlinking(true);
-        setBlinkStartTime(currentTime);
+        // 20% chance for double blink, 80% chance for single blink
+        if (Math.random() < 0.2) {
+          triggerDoubleBlink();
+        } else {
+          // Start a normal single blink
+          setIsBlinking(true);
+          setBlinkStartTime(currentTime);
+        }
       }
       
       if (isBlinking) {
