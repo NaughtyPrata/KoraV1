@@ -38,6 +38,35 @@ export class LipSyncController {
     }
 
     try {
+      // Check if Chrome is using Web Audio API directly
+      const webAudioAnalyser = (audioElement as any)._webAudioAnalyser;
+      const webAudioContext = (audioElement as any)._webAudioContext;
+      
+      console.log('Checking for Web Audio API:', { 
+        hasWebAudioAnalyser: !!webAudioAnalyser, 
+        hasWebAudioContext: !!webAudioContext,
+        audioElement: audioElement
+      });
+      
+      if (webAudioAnalyser && webAudioContext) {
+        console.log('Using Web Audio API analyser for lip sync');
+        // Use the existing analyser from Web Audio API playback
+        this.analyser = webAudioAnalyser;
+        this.audioContext = webAudioContext;
+        if (this.analyser) {
+          this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+          console.log('Web Audio analyser setup complete:', {
+            fftSize: this.analyser.fftSize,
+            frequencyBinCount: this.analyser.frequencyBinCount,
+            dataArrayLength: this.dataArray.length
+          });
+        }
+        this.isActive = true;
+        this.animate();
+        return;
+      }
+
+      // Fallback to traditional audio element approach
       // Check if we need to create a new audio source
       if (this.currentAudioElement !== audioElement || !this.currentAudioSource) {
         // Disconnect previous source if it exists
@@ -79,13 +108,21 @@ export class LipSyncController {
   }
 
   private animate(): void {
-    if (!this.isActive || !this.analyser || !this.dataArray) return;
+    if (!this.isActive || !this.analyser || !this.dataArray) {
+      console.log('Animate stopped:', { isActive: this.isActive, hasAnalyser: !!this.analyser, hasDataArray: !!this.dataArray });
+      return;
+    }
 
     this.analyser.getByteFrequencyData(this.dataArray);
     
     // Calculate average amplitude
     const average = this.dataArray.reduce((sum, value) => sum + value, 0) / this.dataArray.length;
     const normalizedAmplitude = average / 255;
+
+    // Debug logging
+    if (normalizedAmplitude > 0.01) {
+      console.log('Audio detected:', { average, normalizedAmplitude, dataArraySample: this.dataArray.slice(0, 10) });
+    }
 
     // Simple lip sync based on amplitude
     this.updateMouthShape(normalizedAmplitude);
@@ -99,6 +136,8 @@ export class LipSyncController {
     if (amplitude > 0.1) {
       // Open mouth based on amplitude
       const openAmount = Math.min(amplitude * 2, 1);
+      
+      console.log('Updating mouth shape:', { amplitude, openAmount });
       
       // Primary mouth opening visemes
       morphTargets['viseme_aa'] = openAmount * 0.7;

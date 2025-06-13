@@ -4,6 +4,7 @@ import Avatar from '@/components/Avatar';
 import VoiceStreamer from '@/components/VoiceStreamer';
 import { AvatarData } from '@/lib/readyplayerme';
 import { ChatMessage } from '@/lib/openai';
+import { LipSyncController } from '@/utils/lipSync';
 import * as THREE from 'three';
 
 interface ConversationState {
@@ -35,11 +36,19 @@ export default function Home() {
   const [voiceStatus, setVoiceStatus] = useState('Ready');
   
   const audioRef = useRef<HTMLAudioElement>(null);
+  const lipSyncRef = useRef<LipSyncController | null>(null);
 
-  const handleAvatarLoaded = useCallback((data: AvatarData) => {
+  const handleAvatarLoaded = useCallback(async (data: AvatarData) => {
     setAvatarData(data);
     setAvatarLoaded(true);
     setStatus('Avatar loaded');
+    
+    // Initialize lip sync controller
+    if (!lipSyncRef.current) {
+      lipSyncRef.current = new LipSyncController(data);
+      await lipSyncRef.current.initialize();
+      console.log('LipSyncController initialized');
+    }
   }, []);
 
   // Start countdown immediately when component mounts
@@ -73,8 +82,22 @@ export default function Home() {
     if (audioEnabled || !audioRef.current) return;
     
     try {
+      // Chrome-specific: Initialize AudioContext if needed
+      if (typeof window !== 'undefined' && window.AudioContext) {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+          console.log('AudioContext resumed for Chrome');
+        }
+      }
+      
       // Create a silent audio to test permissions
       audioRef.current.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmHgU7k9n1unEiBC13yO/eizEIHWq+8+OWT';
+      
+      // Chrome-specific: Set audio element properties
+      audioRef.current.preload = 'auto';
+      audioRef.current.muted = false;
+      
       await audioRef.current.play();
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -157,24 +180,139 @@ export default function Home() {
 
       // Play audio
       if (audioRef.current) {
-        const audioBlob = new Blob([
-          Uint8Array.from(atob(audioData), c => c.charCodeAt(0))
-        ], { type: mimeType });
-        
-        const audioUrl = URL.createObjectURL(audioBlob);
-        audioRef.current.src = audioUrl;
-        
-        setConversationState(prev => ({
-          ...prev,
-          isPlaying: true
-        }));
-        
-        setStatus('Speaking...');
+        console.log('Audio data received:', { 
+          audioDataLength: audioData.length, 
+          mimeType,
+          userAgent: navigator.userAgent 
+        });
         
         try {
-          await audioRef.current.play();
+          // Convert base64 to binary data
+          const binaryString = atob(audioData);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          console.log('Audio data processed:', { 
+            originalDataLength: audioData.length,
+            binaryStringLength: binaryString.length,
+            bytesLength: bytes.length,
+            mimeType,
+            isChrome: navigator.userAgent.includes('Chrome'),
+            isMac: navigator.platform.includes('Mac')
+          });
+          
+          setConversationState(prev => ({
+            ...prev,
+            isPlaying: true
+          }));
+          
+          setStatus('Speaking...');
+          
+          // Use Web Audio API directly for Chrome on macOS
+          const isChromeMac = navigator.userAgent.includes('Chrome') && navigator.platform.includes('Mac');
+          
+          if (isChromeMac && (window.AudioContext || (window as any).webkitAudioContext)) {
+            console.log('Using Web Audio API for Chrome on macOS');
+            
+            try {
+              const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+              const audioContext = new AudioContextClass();
+              
+              // Resume context if suspended (required by Chrome)
+              if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+              }
+              
+              const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+              const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+              const source = audioContext.createBufferSource();
+              
+              // Create analyser for lip sync
+              const analyser = audioContext.createAnalyser();
+              analyser.fftSize = 256;
+              
+              // Connect: source -> analyser -> destination
+              source.connect(analyser);
+              analyser.connect(audioContext.destination);
+              
+              source.buffer = audioBuffer;
+              source.start(0);
+              
+              console.log('Web Audio API playback started successfully');
+              
+              // Store analyser for lip sync (we'll pass this to the avatar)
+              (audioRef.current as any)._webAudioAnalyser = analyser;
+              (audioRef.current as any)._webAudioContext = audioContext;
+              
+              console.log('Stored Web Audio API references on audio element:', {
+                analyser: analyser,
+                audioContext: audioContext,
+                audioElement: audioRef.current
+              });
+              
+              // Start lip sync
+              if (lipSyncRef.current && audioRef.current) {
+                console.log('Starting lip sync with Web Audio API');
+                lipSyncRef.current.startLipSync(audioRef.current);
+              }
+              
+              // Handle end event
+              source.onended = () => {
+                setConversationState(prev => ({
+                  ...prev,
+                  isPlaying: false
+                }));
+                setStatus('Ready');
+                
+                // Stop lip sync
+                if (lipSyncRef.current) {
+                  lipSyncRef.current.stopLipSync();
+                }
+                
+                // Clean up
+                (audioRef.current as any)._webAudioAnalyser = null;
+                (audioRef.current as any)._webAudioContext = null;
+                audioContext.close();
+              };
+              
+            } catch (webAudioError) {
+              console.error('Web Audio API failed:', webAudioError);
+              throw webAudioError;
+            }
+          } else {
+            // Fallback to audio element for other browsers
+            console.log('Using audio element fallback');
+            
+            const audioBlob = new Blob([bytes], { type: mimeType });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            audioRef.current.src = audioUrl;
+            
+            await audioRef.current.play();
+            console.log('Audio element playback started successfully');
+            
+            // Start lip sync for fallback path
+            if (lipSyncRef.current && audioRef.current) {
+              console.log('Starting lip sync with audio element');
+              lipSyncRef.current.startLipSync(audioRef.current);
+            }
+            
+            // Clean up the blob URL after use
+            setTimeout(() => {
+              URL.revokeObjectURL(audioUrl);
+            }, 1000);
+          }
+          
         } catch (error: any) {
           console.error('Audio play error:', error);
+          console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          });
+          
           if (error.name === 'NotAllowedError') {
             setStatus('Click anywhere to enable audio');
             setConversationState(prev => ({
@@ -182,7 +320,7 @@ export default function Home() {
               isPlaying: false
             }));
           } else {
-            setStatus('Audio error');
+            setStatus(`Audio error: ${error.message}`);
             setConversationState(prev => ({
               ...prev,
               isPlaying: false
@@ -258,14 +396,31 @@ export default function Home() {
         isPlaying: false
       }));
       setStatus('Ready');
+      
+      // Stop lip sync
+      if (lipSyncRef.current) {
+        lipSyncRef.current.stopLipSync();
+      }
     };
 
-    const handleAudioError = () => {
+    const handleAudioError = (e: any) => {
+      console.error('Audio element error event:', e);
+      console.error('Audio error details:', {
+        error: e.target?.error,
+        code: e.target?.error?.code,
+        message: e.target?.error?.message,
+        networkState: e.target?.networkState,
+        readyState: e.target?.readyState
+      });
+      
       setConversationState(prev => ({
         ...prev,
         isPlaying: false
       }));
-      setStatus('Audio error');
+      
+      const errorCode = e.target?.error?.code;
+      const errorMessage = e.target?.error?.message || 'Unknown audio error';
+      setStatus(`Audio error (${errorCode}): ${errorMessage}`);
     };
 
     audio.addEventListener('ended', handleAudioEnd);
