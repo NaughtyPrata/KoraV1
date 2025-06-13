@@ -226,10 +226,10 @@ export function animateToMorphTarget(
   animate();
 }
 
-// Use your actual ReadyPlayerMe avatar
+// Get avatar ID from environment variable or use default
 export function generateRandomAvatarId(): string {
-  // Use your updated avatar ID
-  return '684ac1d9fbaee0d4b4b15ca4';
+  // Use environment variable or fallback to default avatar
+  return process.env.NEXT_PUBLIC_READYPLAYERME_AVATAR_ID || '684ac1d9fbaee0d4b4b15ca4';
 }
 
 export function getAvatarCreatorUrl(): string {
