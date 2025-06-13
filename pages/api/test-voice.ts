@@ -10,7 +10,7 @@ export default async function handler(
   }
 
   try {
-    const testVoiceId = 'qBuKN6YKBk7NMEHSuFgF';
+    const testVoiceId = 'Nq705LUoPRICK1U4GVme';
     
     // Check if API key is configured
     if (!process.env.ELEVENLABS_API_KEY) {

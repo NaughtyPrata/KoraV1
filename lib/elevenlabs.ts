@@ -3,8 +3,8 @@ import axios from 'axios';
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io/v1';
 
-// Default voice ID (Yi - cloned voice)
-const DEFAULT_VOICE_ID = 'qBuKN6YKBk7NMEHSuFgF';
+// Default voice ID (Yi - custom cloned voice)
+const DEFAULT_VOICE_ID = 'Nq705LUoPRICK1U4GVme';
 
 export interface VoiceSettings {
   stability: number;
