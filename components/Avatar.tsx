@@ -298,41 +298,13 @@ export default function Avatar(props: AvatarProps) {
       gl={{ antialias: true, alpha: true }}
       dpr={[1, 2]}
     >
-      {/* Balanced lighting - softer contrast */}
-      <ambientLight intensity={0.5} color="#ffffff" />
+      {/* Default lighting with dramatic side light */}
+      <ambientLight intensity={0.6} />
+      <directionalLight position={[5, 5, 5]} intensity={1} />
       
-      {/* Main directional light */}
-      <directionalLight
-        position={[2, 4, 3]}
-        intensity={1.0}
-        color="#ffffff"
-        castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-near={0.1}
-        shadow-camera-far={10}
-        shadow-camera-left={-2}
-        shadow-camera-right={2}
-        shadow-camera-top={2}
-        shadow-camera-bottom={-2}
-      />
-      
-      {/* Soft face lighting */}
-      <spotLight
-        position={[0, 3, 1.5]}
-        target-position={[0, 1.7, 0]}
-        intensity={0.8}
-        angle={Math.PI / 3}
-        penumbra={0.6}
-        color="#ffffff"
-      />
-      
-      {/* Gentle fill lights */}
-      <pointLight position={[-1.5, 2.5, 1]} intensity={0.7} color="#fff8f0" />
-      <pointLight position={[1.5, 2.5, 1]} intensity={0.4} color="#f0f8ff" />
-      
-      {/* Subtle background fill */}
-      <pointLight position={[0, 2, -1]} intensity={0.2} color="#f5f5f5" />
+      {/* Balanced asymmetric side lights - left side less dark */}
+      <pointLight position={[-0.8, 1.8, 0.5]} intensity={0.5} color="#ffffff" />
+      <pointLight position={[0.8, 1.8, 0.5]} intensity={2.0} color="#ffffff" />
 
       {/* Camera - Close-up head shot with slow movement */}
       <CameraController />
