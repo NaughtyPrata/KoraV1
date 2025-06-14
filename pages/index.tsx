@@ -444,7 +444,7 @@ export default function Home() {
       <main className="avatar-container" onClick={initializeAudio}>
         {/* Avatar */}
         <Avatar
-          avatarId={process.env.NEXT_PUBLIC_READYPLAYERME_AVATAR_URL || "https://models.readyplayer.me/684ad1642c774db868c4d89e.glb"}
+          avatarId={process.env.READYPLAYERME_AVATAR_URL}
           isPlaying={conversationState.isPlaying}
           audioElement={audioRef.current}
           onAvatarLoaded={handleAvatarLoaded}
@@ -452,13 +452,13 @@ export default function Home() {
 
         {/* Voice Streamer */}
         {isAvatarReady && (
-          <VoiceStreamer
-            isEnabled={voiceEnabled && !conversationState.isPlaying} // Don't listen while speaking
-            apiKey={process.env.NEXT_PUBLIC_GLADIA_API_KEY || '42f4192e-55d4-4a27-830a-d62c2cb32c03'}
-            onTranscriptReceived={handleTranscriptReceived}
-            onStatusChange={handleVoiceStatusChange}
-            onError={handleVoiceError}
-          />
+                  <VoiceStreamer
+          isEnabled={voiceEnabled && !conversationState.isPlaying} // Don't listen while speaking
+          apiKey={process.env.GLADIA_API_KEY || '42f4192e-55d4-4a27-830a-d62c2cb32c03'}
+          onTranscriptReceived={handleTranscriptReceived}
+          onStatusChange={handleVoiceStatusChange}
+          onError={handleVoiceError}
+        />
         )}
 
         {/* Hidden audio element */}

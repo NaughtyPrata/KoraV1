@@ -127,7 +127,12 @@ function AvatarModel({ avatarId, isPlaying, audioElement, emotion = 'neutral', o
         setError(null);
         
         const id = avatarId || generateRandomAvatarId();
-        console.log('Loading avatar:', id);
+        console.log('Loading avatar:', {
+          providedAvatarId: avatarId,
+          generatedId: id,
+          usingProvidedId: !!avatarId,
+          envVarFromProps: process.env.READYPLAYERME_AVATAR_URL
+        });
         
         const data = await loadAvatar(id, {
           quality: 'medium',

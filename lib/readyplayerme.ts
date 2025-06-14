@@ -228,8 +228,14 @@ export function animateToMorphTarget(
 
 // Get avatar ID from environment variable or use default
 export function generateRandomAvatarId(): string {
-  // Use environment variable or fallback to default avatar
-  return process.env.NEXT_PUBLIC_READYPLAYERME_AVATAR_ID || '684ac1d9fbaee0d4b4b15ca4';
+  // Use the correct environment variable that's set in Vercel
+  const avatarUrl = process.env.READYPLAYERME_AVATAR_URL || '';
+  console.log('generateRandomAvatarId called:', {
+    avatarUrl,
+    envVar: 'READYPLAYERME_AVATAR_URL',
+    hasEnvVar: !!process.env.READYPLAYERME_AVATAR_URL
+  });
+  return avatarUrl;
 }
 
 export function getAvatarCreatorUrl(): string {
