@@ -172,32 +172,75 @@ export default function VoiceStreamer({
     }
   }, [apiKey]);
 
-  // Connect to WebSocket with smart transcript handling
+  // Cleanup resources
+  const cleanup = useCallback(() => {
+    console.log('Cleaning up resources...');
+    if (scriptProcessorRef.current) {
+      scriptProcessorRef.current.disconnect();
+      scriptProcessorRef.current = null;
+    }
+    if (mediaStreamSourceRef.current) {
+      mediaStreamSourceRef.current.disconnect();
+      mediaStreamSourceRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
+      audioStreamRef.current = null;
+    }
+    if (websocketRef.current) {
+      if (websocketRef.current.readyState === WebSocket.OPEN) {
+        websocketRef.current.close();
+      }
+      websocketRef.current = null;
+    }
+    // Reset all refs
+    lastSpeechTimeRef.current = 0;
+    speechLevelBufferRef.current = [];
+    transcriptBufferRef.current = '';
+    lastTranscriptTimeRef.current = 0;
+  }, []);
+
+  // Helper to ensure cleanup is always called on WebSocket close/error
+  const handleWebSocketCloseOrError = useCallback((eventOrError: any) => {
+    if (websocketRef.current) {
+      websocketRef.current.onclose = null;
+      websocketRef.current.onerror = null;
+      websocketRef.current.onmessage = null;
+      websocketRef.current = null;
+    }
+    cleanup();
+    setIsRecording(false);
+    setMicLevel(0);
+    setIsSpeaking(false);
+    updateStatus('Ready');
+  }, [cleanup, updateStatus]);
+
+  // Updated connectWebSocket to always cleanup on error/close
   const connectWebSocket = useCallback((session: any) => {
     return new Promise<WebSocket>((resolve, reject) => {
       console.log('Connecting to WebSocket:', session.url);
-      
       const ws = new WebSocket(session.url);
-      
+      let resolved = false;
       ws.onopen = () => {
         console.log('✅ WebSocket connected');
+        resolved = true;
         resolve(ws);
       };
-      
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
           if (data.type === 'transcript' && data.data && data.data.utterance) {
             const utterance = data.data.utterance;
             const text = utterance.text || '';
             const isFinal = data.data.is_final || false;
             const confidence = utterance.confidence || 0;
-            
             if (text.trim()) {
               const now = Date.now();
               lastTranscriptTimeRef.current = now;
-              
               console.log(`📝 Transcript [${isFinal ? 'FINAL' : 'PARTIAL'}] (${confidence.toFixed(2)}): ${text}`);
               
               if (isFinal) {
@@ -229,34 +272,32 @@ export default function VoiceStreamer({
               }
             }
           }
-          
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
       };
-      
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        reject(error);
+        handleWebSocketCloseOrError(error);
+        if (!resolved) reject(error);
       };
-      
       ws.onclose = (event) => {
         console.log(`WebSocket closed: ${event.code} ${event.reason}`);
-        // Send any remaining buffered transcript
         if (transcriptBufferRef.current.trim()) {
           sendAccumulatedTranscript();
         }
+        handleWebSocketCloseOrError(event);
+        if (!resolved) reject(new Error('WebSocket closed before open'));
       };
-      
-      // Connection timeout
       setTimeout(() => {
         if (ws.readyState === WebSocket.CONNECTING) {
           ws.close();
-          reject(new Error('WebSocket connection timeout'));
+          handleWebSocketCloseOrError(new Error('WebSocket connection timeout'));
+          if (!resolved) reject(new Error('WebSocket connection timeout'));
         }
       }, 10000);
     });
-  }, [onTranscriptReceived, isSpeaking, sendAccumulatedTranscript]);
+  }, [sendAccumulatedTranscript, handleWebSocketCloseOrError]);
 
   // Get microphone access
   const getMicrophoneAccess = useCallback(async () => {
@@ -370,9 +411,30 @@ export default function VoiceStreamer({
     return () => clearInterval(interval);
   }, [sendAccumulatedTranscript, maxTranscriptAge]);
 
-  // Start recording
+  // Defensive: stopRecording is now idempotent and always cleans up
+  const stopRecording = useCallback(() => {
+    if (!isRecording && !websocketRef.current && !audioContextRef.current && !audioStreamRef.current) return;
+    console.log('=== STOPPING RECORDING ===');
+    updateStatus('Stopping...');
+    if (transcriptBufferRef.current.trim()) {
+      sendAccumulatedTranscript();
+    }
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+    cleanup();
+    setIsRecording(false);
+    setMicLevel(0);
+    setIsSpeaking(false);
+    updateStatus('Ready');
+    console.log('✅ Recording stopped');
+  }, [isRecording, updateStatus, sendAccumulatedTranscript, cleanup]);
+
+  // Ensure only one session/context is open at a time
   const startRecording = useCallback(async () => {
     if (isRecording) return;
+    stopRecording(); // Defensive: stop any previous session before starting new
     
     console.log('=== STARTING CONTINUOUS RECORDING ===');
     updateStatus('Starting...');
@@ -414,72 +476,7 @@ export default function VoiceStreamer({
       updateStatus('Failed to start');
       cleanup();
     }
-  }, [isRecording, createGladiaSession, connectWebSocket, getMicrophoneAccess, setupAudioProcessing, updateStatus, logError]);
-
-  // Stop recording
-  const stopRecording = useCallback(() => {
-    if (!isRecording) return;
-    
-    console.log('=== STOPPING RECORDING ===');
-    updateStatus('Stopping...');
-    
-    // Send any remaining buffered transcript
-    if (transcriptBufferRef.current.trim()) {
-      sendAccumulatedTranscript();
-    }
-    
-    // Clear timeouts
-    if (silenceTimeoutRef.current) {
-      clearTimeout(silenceTimeoutRef.current);
-      silenceTimeoutRef.current = null;
-    }
-    
-    cleanup();
-    setIsRecording(false);
-    setMicLevel(0);
-    setIsSpeaking(false);
-    updateStatus('Ready');
-    
-    console.log('✅ Recording stopped');
-  }, [isRecording, updateStatus, sendAccumulatedTranscript]);
-
-  // Cleanup resources
-  const cleanup = useCallback(() => {
-    console.log('Cleaning up resources...');
-    
-    if (scriptProcessorRef.current) {
-      scriptProcessorRef.current.disconnect();
-      scriptProcessorRef.current = null;
-    }
-    
-    if (mediaStreamSourceRef.current) {
-      mediaStreamSourceRef.current.disconnect();
-      mediaStreamSourceRef.current = null;
-    }
-    
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    
-    if (audioStreamRef.current) {
-      audioStreamRef.current.getTracks().forEach(track => track.stop());
-      audioStreamRef.current = null;
-    }
-    
-    if (websocketRef.current) {
-      if (websocketRef.current.readyState === WebSocket.OPEN) {
-        websocketRef.current.close();
-      }
-      websocketRef.current = null;
-    }
-    
-    // Reset all refs
-    lastSpeechTimeRef.current = 0;
-    speechLevelBufferRef.current = [];
-    transcriptBufferRef.current = '';
-    lastTranscriptTimeRef.current = 0;
-  }, []);
+  }, [isRecording, createGladiaSession, connectWebSocket, getMicrophoneAccess, setupAudioProcessing, updateStatus, logError, stopRecording]);
 
   // Handle isEnabled changes
   useEffect(() => {
