@@ -17,21 +17,8 @@ function Background() {
   );
 }
 
-// Camera controller with tiny left-right movement
+// Static camera controller - no movement
 function CameraController() {
-  const { camera } = useThree();
-  
-  useFrame((state) => {
-    const time = state.clock.elapsedTime;
-    
-    // Tiny left-right movement - barely noticeable
-    const xMovement = Math.sin(time * 0.05) * 0.05; // Very slow and very small
-    
-    // Set camera position with movement
-    camera.position.set(xMovement, 1.7, 0.8);
-    camera.lookAt(0, 1.7, 0); // Always look at the avatar
-  });
-  
   return (
     <PerspectiveCamera
       makeDefault
@@ -236,7 +223,7 @@ function AvatarModel({ avatarId, isPlaying, audioElement, emotion = 'neutral', o
         const time = state.clock.elapsedTime;
         
         // Very subtle breathing animation (much gentler than before)
-        groupRef.current.scale.y = 1 + Math.sin(time * 0.4) * 0.003;
+        groupRef.current.scale.y = 1 + Math.sin(time * 0.8) * 0.001;
         
         // Subtle natural head movements - always apply base tilt, reduce movement when speaking
         if (avatarData.scene) {
@@ -317,19 +304,7 @@ export default function Avatar(props: AvatarProps) {
         <AvatarModel {...props} />
       </group>
 
-      {/* Controls - Optimized for head close-up */}
-      <OrbitControls
-        enablePan={false}
-        enableZoom={true}
-        enableRotate={true}
-        minDistance={0.5}
-        maxDistance={1.5}
-        minPolarAngle={Math.PI / 4}
-        maxPolarAngle={Math.PI / 2.2}
-        target={[0, 1.7, 0]}
-        maxAzimuthAngle={Math.PI / 3}
-        minAzimuthAngle={-Math.PI / 3}
-      />
+
     </Canvas>
   );
 } 
