@@ -23,6 +23,9 @@ export default function VoiceStreamer({
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState('Ready');
   const [isPersistentMode, setIsPersistentMode] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [gateStatus, setGateStatus] = useState(false);
+  const [showControls, setShowControls] = useState(false);
   
   // Refs for audio processing
   const wsRef = useRef<WebSocket | null>(null);
@@ -33,7 +36,7 @@ export default function VoiceStreamer({
   const sessionRef = useRef<GladiaSession | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const noiseGateRef = useRef<{ threshold: number; lastVolume: number; gateOpen: boolean }>({
-    threshold: 0.015, // Slightly lower threshold - more responsive to your voice
+    threshold: 0.008, // MUCH lower threshold - more sensitive to voice
     lastVolume: 0,
     gateOpen: false
   });
@@ -54,6 +57,13 @@ export default function VoiceStreamer({
   }, [onError]);
 
   const initializeGladiaSession = useCallback(async (): Promise<GladiaSession> => {
+    console.log('Initializing Gladia session...');
+    console.log('API Key available:', !!apiKey);
+    
+    if (!apiKey) {
+      throw new Error('Gladia API key is required');
+    }
+
     const config = {
       // Audio settings optimized for real-time processing
       encoding: 'wav/pcm',
@@ -77,7 +87,7 @@ export default function VoiceStreamer({
       // Pre-processing enhancements - BALANCED SENSITIVITY
       pre_processing: {
         audio_enhancer: true, // Keep audio enhancement for noise reduction
-        speech_threshold: 0.6 // BALANCED: 0.6 - not too sensitive, not too strict
+        speech_threshold: 0.4 // MORE SENSITIVE: 0.4 - easier to trigger voice detection
       },
       
       // Real-time processing configuration
@@ -127,30 +137,51 @@ export default function VoiceStreamer({
       }
     };
 
-    console.log('Initializing Gladia session with balanced config:', config);
+    console.log('Gladia session config:', JSON.stringify(config, null, 2));
 
-    const response = await fetch('https://api.gladia.io/v2/live', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Gladia-Key': apiKey
-      },
-      body: JSON.stringify(config)
-    });
+    try {
+      const response = await fetch('https://api.gladia.io/v2/live', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Gladia-Key': apiKey
+        },
+        body: JSON.stringify(config)
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Session initialization failed: ${response.status} - ${errorText}`);
+      console.log('Gladia API response status:', response.status);
+      console.log('Gladia API response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Gladia API error response:', errorText);
+        throw new Error(`Gladia API failed (${response.status}): ${errorText}`);
+      }
+
+      const session = await response.json();
+      console.log('Gladia session created successfully:', session);
+      return session;
+    } catch (error) {
+      console.error('Gladia session initialization error:', error);
+      throw new Error(`Failed to initialize Gladia session: ${error}`);
     }
-
-    return await response.json();
   }, [apiKey]);
 
   const connectWebSocket = useCallback((session: GladiaSession): Promise<WebSocket> => {
     return new Promise((resolve, reject) => {
+      console.log('Connecting to WebSocket:', session.url);
       const ws = new WebSocket(session.url);
+      
+      // Set connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+          reject(new Error('WebSocket connection timeout'));
+        }
+      }, 10000); // 10 second timeout
 
       ws.onopen = () => {
+        clearTimeout(connectionTimeout);
         console.log('WebSocket connected successfully');
         resolve(ws);
       };
@@ -167,8 +198,8 @@ export default function VoiceStreamer({
                 const text = utterance.text || '';
                 const confidence = utterance.confidence || 0;
                 
-                // Balanced confidence filtering to allow your speech but filter background
-                if (text.trim() && confidence > 0.6) { // Balanced from 0.65 to 0.6
+                // More permissive confidence filtering to catch your voice
+                if (text.trim() && confidence > 0.45) { // LOWERED to 0.45 - more sensitive to speech
                   console.log('Transcript received:', { text, isFinal, confidence });
                   onTranscriptReceived(text, isFinal);
                 } else if (text.trim()) {
@@ -177,7 +208,8 @@ export default function VoiceStreamer({
               }
               break;
             case 'error':
-              logError(`Gladia error: ${data.message}`);
+              console.error('Gladia WebSocket error:', data);
+              logError(`Gladia error: ${data.message || 'Unknown error'}`);
               break;
             case 'speech_event':
               // Handle speech events if needed
@@ -187,21 +219,25 @@ export default function VoiceStreamer({
               break;
           }
         } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
           logError(`Error parsing WebSocket message: ${error}`);
         }
       };
 
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        reject(error);
+        clearTimeout(connectionTimeout);
+        console.error('WebSocket error event:', error);
+        const errorMessage = error instanceof Error ? error.message : 'WebSocket connection failed';
+        reject(new Error(errorMessage));
       };
 
       ws.onclose = (event) => {
+        clearTimeout(connectionTimeout);
         console.log('WebSocket closed:', event.code, event.reason);
         if (event.code === 1000) {
           updateStatus('Session completed');
         } else {
-          updateStatus('Disconnected - Ready to reconnect');
+          updateStatus('Connection lost - Ready to retry');
         }
       };
     });
@@ -253,6 +289,10 @@ export default function VoiceStreamer({
       // Gate is closed - silence the audio
       outputData.fill(0);
     }
+    
+    // Update UI with current levels for debugging
+    setMicLevel(Math.round(gate.lastVolume * 1000) / 1000);
+    setGateStatus(gate.gateOpen);
     
     return outputData;
   }, []);
@@ -320,7 +360,7 @@ export default function VoiceStreamer({
     // Create gain node for volume control (reuse if possible)
     if (!gainNodeRef.current) {
       const gainNode = audioContextRef.current.createGain();
-      gainNode.gain.value = 1.0; // REDUCED from 2.0 to 1.0 - less amplification = less background noise
+      gainNode.gain.value = 1.8; // INCREASED to 1.8 - more amplification for better voice pickup
       gainNodeRef.current = gainNode;
     }
 
@@ -340,7 +380,7 @@ export default function VoiceStreamer({
           // Apply high-pass filter to remove low-frequency noise (rumble, HVAC, etc.)
           const filteredData = new Float32Array(gatedData.length);
           let lastSample = 0;
-          const alpha = 0.97; // More aggressive high-pass filtering
+          const alpha = 0.95; // LESS aggressive high-pass filtering - preserve more voice
           
           for (let i = 0; i < gatedData.length; i++) {
             filteredData[i] = alpha * (filteredData[i - 1] || 0) + alpha * (gatedData[i] - lastSample);
@@ -399,58 +439,82 @@ export default function VoiceStreamer({
   }, []);
 
   const startRecording = useCallback(async () => {
-    if (isRecording) return;
+    if (isRecording) {
+      console.log('Already recording, skipping start request');
+      return;
+    }
+
+    console.log('Starting recording process...');
 
     try {
       lastEnabledTimeRef.current = Date.now();
       
       // Quick reconnection if we have existing infrastructure
       if (isInitializedRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        console.log('Using quick resume with existing connection');
         updateStatus('Quick resume...');
         await resumeAudioProcessing();
         setIsRecording(true);
-        updateStatus('Listening (less sensitive)...');
+        updateStatus('Listening (resumed)...');
         return;
+      }
+
+      updateStatus('Checking API key...');
+      if (!apiKey) {
+        throw new Error('No Gladia API key provided');
       }
 
       updateStatus('Initializing session...');
       
-      // Initialize Gladia session (reuse if recent)
-      if (!sessionRef.current || (Date.now() - lastEnabledTimeRef.current) > 30000) {
-        const session = await initializeGladiaSession();
-        sessionRef.current = session;
-      }
+      // Initialize Gladia session (always create new to avoid stale sessions)
+      console.log('Creating new Gladia session...');
+      const session = await initializeGladiaSession();
+      sessionRef.current = session;
+      console.log('Session created, connecting WebSocket...');
 
-      updateStatus('Connecting...');
+      updateStatus('Connecting to Gladia...');
 
-      // Connect WebSocket (or reuse if still open)
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        const ws = await connectWebSocket(sessionRef.current);
-        wsRef.current = ws;
-      }
+      // Connect WebSocket with the new session
+      const ws = await connectWebSocket(session);
+      wsRef.current = ws;
+      console.log('WebSocket connected successfully');
 
-      updateStatus('Setting up noise-filtered audio...');
+      updateStatus('Setting up audio processing...');
 
-      // Setup audio processing (reuse existing if possible)
+      // Setup audio processing
       await setupAudioProcessing();
       await resumeAudioProcessing();
+      console.log('Audio processing setup complete');
 
       setIsRecording(true);
       isInitializedRef.current = true;
       updateStatus('Listening (balanced)...');
+      console.log('Voice recording started successfully');
       
     } catch (error) {
-      logError(`Failed to start recording: ${error}`);
-      updateStatus('Error - Retrying...');
+      console.error('Failed to start recording:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logError(`Failed to start: ${errorMessage}`);
+      updateStatus('Connection failed - Retrying...');
       
-      // Clean up and retry after short delay
+      // Clean up any partial state
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      sessionRef.current = null;
+      isInitializedRef.current = false;
+      setIsRecording(false);
+      
+      // Retry after delay if still enabled
       setTimeout(() => {
         if (isEnabled) {
+          console.log('Retrying voice recording start...');
           startRecording();
         }
-      }, 1000);
+      }, 2000); // 2 second delay for retry
     }
-  }, [isRecording, isEnabled, initializeGladiaSession, connectWebSocket, setupAudioProcessing, resumeAudioProcessing, updateStatus, logError]);
+  }, [isRecording, isEnabled, apiKey, initializeGladiaSession, connectWebSocket, setupAudioProcessing, resumeAudioProcessing, updateStatus, logError]);
 
   const stopRecording = useCallback(async () => {
     if (!isRecording) return;
@@ -578,6 +642,23 @@ export default function VoiceStreamer({
         <div style={{
           fontSize: '10px',
           opacity: 0.8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <span>Level: {micLevel.toFixed(3)}</span>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: gateStatus ? '#10b981' : '#ef4444'
+          }} />
+        </div>
+      )}
+      {isRecording && (
+        <div style={{
+          fontSize: '10px',
+          opacity: 0.8,
           background: 'rgba(16,185,129,0.2)',
           padding: '2px 8px',
           borderRadius: '10px',
@@ -586,6 +667,74 @@ export default function VoiceStreamer({
           Filtered
         </div>
       )}
+      
+      {/* Sensitivity Controls */}
+      <button
+        onClick={() => setShowControls(!showControls)}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: 'white',
+          cursor: 'pointer',
+          fontSize: '12px',
+          opacity: 0.7
+        }}
+      >
+        ⚙️
+      </button>
+      
+      {showControls && (
+        <div style={{
+          position: 'absolute',
+          bottom: '100%',
+          left: '0',
+          background: 'rgba(0,0,0,0.95)',
+          padding: '10px',
+          borderRadius: '8px',
+          marginBottom: '10px',
+          minWidth: '200px',
+          border: '1px solid rgba(255,255,255,0.2)'
+        }}>
+          <div style={{ fontSize: '11px', marginBottom: '8px', color: '#10b981' }}>Sensitivity Controls</div>
+          <div style={{ fontSize: '10px', marginBottom: '5px' }}>Threshold: {noiseGateRef.current.threshold.toFixed(3)}</div>
+          <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+            <button
+              onClick={() => {
+                noiseGateRef.current.threshold = Math.max(0.001, noiseGateRef.current.threshold - 0.002);
+              }}
+              style={{
+                background: '#10b981',
+                border: 'none',
+                color: 'white',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                fontSize: '9px',
+                cursor: 'pointer'
+              }}
+            >
+              More Sensitive
+            </button>
+            <button
+              onClick={() => {
+                noiseGateRef.current.threshold = Math.min(0.05, noiseGateRef.current.threshold + 0.002);
+              }}
+              style={{
+                background: '#ef4444',
+                border: 'none',
+                color: 'white',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                fontSize: '9px',
+                cursor: 'pointer'
+              }}
+            >
+              Less Sensitive
+            </button>
+          </div>
+          <div style={{ fontSize: '9px', opacity: 0.7 }}>Green dot = mic active</div>
+        </div>
+      )}
+      
       {isPersistentMode && !isRecording && (
         <div style={{
           fontSize: '10px',
