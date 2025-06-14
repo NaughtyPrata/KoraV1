@@ -361,11 +361,11 @@ export default function VoiceStreamer({
       } catch (error) {
         console.error('❌ Failed to get microphone access:', error);
         console.error('Error details:', {
-          name: error.name,
-          message: error.message,
-          constraint: error.constraint
+          name: (error as any)?.name,
+          message: (error as any)?.message,
+          constraint: (error as any)?.constraint
         });
-        throw new Error(`Microphone access denied: ${error.message}`);
+        throw new Error(`Microphone access denied: ${(error as any)?.message || 'Unknown error'}`);
       }
     }
 
