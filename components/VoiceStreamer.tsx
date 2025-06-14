@@ -218,15 +218,17 @@ export default function VoiceStreamer({
         echoCancellation: true, // Enable echo cancellation
         noiseSuppression: true, // Enable noise suppression
         autoGainControl: true, // Enable automatic gain control
-        // Additional constraints for better audio quality
-        googEchoCancellation: true,
-        googAutoGainControl: true,
-        googNoiseSuppression: true,
-        googHighpassFilter: true,
-        googNoiseSuppression2: true,
-        googEchoCancellation2: true,
-        googAutoGainControl2: true,
-        googDucking: false // Disable ducking to avoid volume changes
+        // Additional constraints for better audio quality (cast to any for browser-specific)
+        ...({
+          googEchoCancellation: true,
+          googAutoGainControl: true,
+          googNoiseSuppression: true,
+          googHighpassFilter: true,
+          googNoiseSuppression2: true,
+          googEchoCancellation2: true,
+          googAutoGainControl2: true,
+          googDucking: false // Disable ducking to avoid volume changes
+        } as any)
       }
     });
 

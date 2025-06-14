@@ -227,7 +227,7 @@ export default function VoiceTest() {
             <li>Improved endpointing (300ms vs default)</li>
             <li>Advanced audio processing with compression</li>
             <li>High-pass filter to reduce background noise</li>
-            <li>Confidence filtering (only shows >50% confidence)</li>
+            <li>Confidence filtering (only shows &gt;50% confidence)</li>
           </ul>
         </div>
 
