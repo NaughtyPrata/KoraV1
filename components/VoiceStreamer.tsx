@@ -22,6 +22,7 @@ export default function VoiceStreamer({
 }: VoiceStreamerProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState('Ready');
+  const [isPersistentMode, setIsPersistentMode] = useState(false);
   
   // Refs for audio processing
   const wsRef = useRef<WebSocket | null>(null);
@@ -32,6 +33,11 @@ export default function VoiceStreamer({
   const sessionRef = useRef<GladiaSession | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const dynamicsCompressorRef = useRef<DynamicsCompressorNode | null>(null);
+  
+  // Recovery optimization refs
+  const lastEnabledTimeRef = useRef<number>(0);
+  const reconnectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isInitializedRef = useRef(false);
 
   const updateStatus = useCallback((newStatus: string) => {
     setStatus(newStatus);
@@ -189,7 +195,7 @@ export default function VoiceStreamer({
         if (event.code === 1000) {
           updateStatus('Session completed');
         } else {
-          updateStatus('Disconnected');
+          updateStatus('Disconnected - Ready to reconnect');
         }
       };
     });
@@ -210,143 +216,220 @@ export default function VoiceStreamer({
   }, []);
 
   const setupAudioProcessing = useCallback(async (): Promise<void> => {
+    // Reuse existing audio context if available and not closed
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      console.log('Reusing existing AudioContext');
+      return;
+    }
+
     // Get microphone access with enhanced audio constraints
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
+    if (!audioStreamRef.current) {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true, // Enable echo cancellation
+          noiseSuppression: true, // Enable noise suppression
+          autoGainControl: true, // Enable automatic gain control
+          // Additional constraints for better audio quality (cast to any for browser-specific)
+          ...({
+            googEchoCancellation: true,
+            googAutoGainControl: true,
+            googNoiseSuppression: true,
+            googHighpassFilter: true,
+            googNoiseSuppression2: true,
+            googEchoCancellation2: true,
+            googAutoGainControl2: true,
+            googDucking: false // Disable ducking to avoid volume changes
+          } as any)
+        }
+      });
+
+      audioStreamRef.current = stream;
+      console.log('Audio stream acquired with constraints:', stream.getAudioTracks()[0].getSettings());
+    }
+
+    // Create AudioContext with optimal settings (reuse if possible)
+    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
         sampleRate: 16000,
-        channelCount: 1,
-        echoCancellation: true, // Enable echo cancellation
-        noiseSuppression: true, // Enable noise suppression
-        autoGainControl: true, // Enable automatic gain control
-        // Additional constraints for better audio quality (cast to any for browser-specific)
-        ...({
-          googEchoCancellation: true,
-          googAutoGainControl: true,
-          googNoiseSuppression: true,
-          googHighpassFilter: true,
-          googNoiseSuppression2: true,
-          googEchoCancellation2: true,
-          googAutoGainControl2: true,
-          googDucking: false // Disable ducking to avoid volume changes
-        } as any)
-      }
-    });
+        latencyHint: 'interactive' // Optimize for low latency
+      });
 
-    audioStreamRef.current = stream;
-    console.log('Audio stream acquired with constraints:', stream.getAudioTracks()[0].getSettings());
+      audioContextRef.current = audioContext;
+    }
 
-    // Create AudioContext with optimal settings
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-      sampleRate: 16000,
-      latencyHint: 'interactive' // Optimize for low latency
-    });
+    // Resume context if suspended
+    if (audioContextRef.current.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
 
-    audioContextRef.current = audioContext;
+    // Create media stream source (reuse if possible)
+    if (!mediaStreamSourceRef.current && audioStreamRef.current) {
+      const mediaStreamSource = audioContextRef.current.createMediaStreamSource(audioStreamRef.current);
+      mediaStreamSourceRef.current = mediaStreamSource;
+    }
 
-    // Create media stream source
-    const mediaStreamSource = audioContext.createMediaStreamSource(stream);
-    mediaStreamSourceRef.current = mediaStreamSource;
+    // Create gain node for volume control (reuse if possible)
+    if (!gainNodeRef.current) {
+      const gainNode = audioContextRef.current.createGain();
+      gainNode.gain.value = 2.0; // Boost volume slightly
+      gainNodeRef.current = gainNode;
+    }
 
-    // Create gain node for volume control
-    const gainNode = audioContext.createGain();
-    gainNode.gain.value = 2.0; // Boost volume slightly
-    gainNodeRef.current = gainNode;
-
-    // Create dynamics compressor for consistent volume
-    const compressor = audioContext.createDynamicsCompressor();
-    compressor.threshold.value = -24; // Compression threshold
-    compressor.knee.value = 30; // Soft knee
-    compressor.ratio.value = 12; // Compression ratio
-    compressor.attack.value = 0.003; // Fast attack
-    compressor.release.value = 0.25; // Medium release
-    dynamicsCompressorRef.current = compressor;
+    // Create dynamics compressor for consistent volume (reuse if possible)
+    if (!dynamicsCompressorRef.current) {
+      const compressor = audioContextRef.current.createDynamicsCompressor();
+      compressor.threshold.value = -24; // Compression threshold
+      compressor.knee.value = 30; // Soft knee
+      compressor.ratio.value = 12; // Compression ratio
+      compressor.attack.value = 0.003; // Fast attack
+      compressor.release.value = 0.25; // Medium release
+      dynamicsCompressorRef.current = compressor;
+    }
 
     // Create script processor with smaller buffer for lower latency
-    const scriptProcessor = audioContext.createScriptProcessor(2048, 1, 1);
-    scriptProcessorRef.current = scriptProcessor;
+    if (!scriptProcessorRef.current) {
+      const scriptProcessor = audioContextRef.current.createScriptProcessor(2048, 1, 1);
+      scriptProcessorRef.current = scriptProcessor;
 
-    scriptProcessor.onaudioprocess = (event) => {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        const inputBuffer = event.inputBuffer;
-        const inputData = inputBuffer.getChannelData(0);
+      scriptProcessor.onaudioprocess = (event) => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && isRecording) {
+          const inputBuffer = event.inputBuffer;
+          const inputData = inputBuffer.getChannelData(0);
 
-        // Apply simple high-pass filter to reduce low-frequency noise
-        const filteredData = new Float32Array(inputData.length);
-        let lastSample = 0;
-        const alpha = 0.95; // High-pass filter coefficient
-        
-        for (let i = 0; i < inputData.length; i++) {
-          filteredData[i] = alpha * (filteredData[i - 1] || 0) + alpha * (inputData[i] - lastSample);
-          lastSample = inputData[i];
+          // Apply simple high-pass filter to reduce low-frequency noise
+          const filteredData = new Float32Array(inputData.length);
+          let lastSample = 0;
+          const alpha = 0.95; // High-pass filter coefficient
+          
+          for (let i = 0; i < inputData.length; i++) {
+            filteredData[i] = alpha * (filteredData[i - 1] || 0) + alpha * (inputData[i] - lastSample);
+            lastSample = inputData[i];
+          }
+
+          // Convert to 16-bit PCM
+          const pcmData = float32ToPCM16(filteredData);
+
+          // Send as binary data
+          wsRef.current.send(pcmData);
+        }
+      };
+    }
+
+    // Connect the audio processing chain (disconnect first to avoid duplicates)
+    try {
+      if (mediaStreamSourceRef.current && gainNodeRef.current && dynamicsCompressorRef.current && scriptProcessorRef.current) {
+        // Disconnect any existing connections
+        try {
+          mediaStreamSourceRef.current.disconnect();
+          gainNodeRef.current.disconnect();
+          dynamicsCompressorRef.current.disconnect();
+          scriptProcessorRef.current.disconnect();
+        } catch (e) {
+          // Ignore disconnect errors
         }
 
-        // Convert to 16-bit PCM
-        const pcmData = float32ToPCM16(filteredData);
+        // Reconnect
+        mediaStreamSourceRef.current
+          .connect(gainNodeRef.current)
+          .connect(dynamicsCompressorRef.current)
+          .connect(scriptProcessorRef.current)
+          .connect(audioContextRef.current.destination);
 
-        // Send as binary data
-        wsRef.current.send(pcmData);
+        console.log('Audio processing chain established/reestablished');
       }
-    };
+    } catch (error) {
+      console.error('Error setting up audio processing chain:', error);
+      throw error;
+    }
+  }, [float32ToPCM16, isRecording]);
 
-    // Connect the audio processing chain
-    mediaStreamSource
-      .connect(gainNode)
-      .connect(compressor)
-      .connect(scriptProcessor)
-      .connect(audioContext.destination);
+  const pauseAudioProcessing = useCallback(() => {
+    // Pause by disconnecting the script processor from sending data
+    if (scriptProcessorRef.current) {
+      console.log('Pausing audio processing (keeping context alive)');
+      // We keep the context alive but stop processing audio in the callback
+    }
+  }, []);
 
-    console.log('Audio processing chain established');
-  }, [float32ToPCM16]);
+  const resumeAudioProcessing = useCallback(async () => {
+    // Resume by reconnecting and ensuring context is running
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
+    console.log('Resuming audio processing');
+  }, []);
 
   const startRecording = useCallback(async () => {
-    if (isRecording || !isEnabled) return;
+    if (isRecording) return;
 
     try {
-      updateStatus('Initializing enhanced session...');
+      lastEnabledTimeRef.current = Date.now();
       
-      // Initialize Gladia session with improved config
-      const session = await initializeGladiaSession();
-      sessionRef.current = session;
+      // Quick reconnection if we have existing infrastructure
+      if (isInitializedRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        updateStatus('Quick resume...');
+        await resumeAudioProcessing();
+        setIsRecording(true);
+        updateStatus('Listening (resumed)...');
+        return;
+      }
 
-      updateStatus('Connecting to Gladia...');
+      updateStatus('Initializing session...');
+      
+      // Initialize Gladia session (reuse if recent)
+      if (!sessionRef.current || (Date.now() - lastEnabledTimeRef.current) > 30000) {
+        const session = await initializeGladiaSession();
+        sessionRef.current = session;
+      }
 
-      // Connect WebSocket
-      const ws = await connectWebSocket(session);
-      wsRef.current = ws;
+      updateStatus('Connecting...');
 
-      updateStatus('Setting up enhanced audio processing...');
+      // Connect WebSocket (or reuse if still open)
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        const ws = await connectWebSocket(sessionRef.current);
+        wsRef.current = ws;
+      }
 
-      // Setup audio processing with noise reduction
+      updateStatus('Setting up audio...');
+
+      // Setup audio processing (reuse existing if possible)
       await setupAudioProcessing();
+      await resumeAudioProcessing();
 
       setIsRecording(true);
-      updateStatus('Listening with enhanced accuracy...');
+      isInitializedRef.current = true;
+      updateStatus('Listening (enhanced)...');
       
     } catch (error) {
       logError(`Failed to start recording: ${error}`);
-      updateStatus('Error - Check microphone permissions');
-      cleanup();
+      updateStatus('Error - Retrying...');
+      
+      // Clean up and retry after short delay
+      setTimeout(() => {
+        if (isEnabled) {
+          startRecording();
+        }
+      }, 1000);
     }
-  }, [isRecording, isEnabled, initializeGladiaSession, connectWebSocket, setupAudioProcessing, updateStatus, logError]);
+  }, [isRecording, isEnabled, initializeGladiaSession, connectWebSocket, setupAudioProcessing, resumeAudioProcessing, updateStatus, logError]);
 
-  const stopRecording = useCallback(() => {
+  const stopRecording = useCallback(async () => {
     if (!isRecording) return;
 
-    updateStatus('Stopping...');
+    updateStatus('Pausing...');
 
-    // Send stop message to Gladia
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'stop_recording'
-      }));
-    }
+    // Pause audio processing but keep infrastructure alive
+    pauseAudioProcessing();
 
     setIsRecording(false);
-    cleanup();
-    updateStatus('Ready');
-  }, [isRecording, updateStatus]);
+    updateStatus('Ready (quick resume available)');
+  }, [isRecording, pauseAudioProcessing, updateStatus]);
 
-  const cleanup = useCallback(() => {
+  const fullCleanup = useCallback(() => {
+    console.log('Performing full cleanup');
+    
     // Clean up audio processing nodes
     if (scriptProcessorRef.current) {
       scriptProcessorRef.current.disconnect();
@@ -379,26 +462,57 @@ export default function VoiceStreamer({
       audioStreamRef.current = null;
     }
 
-    // WebSocket will close naturally
-    wsRef.current = null;
+    // Clean up WebSocket
+    if (wsRef.current) {
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'stop_recording' }));
+      }
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
     sessionRef.current = null;
+    isInitializedRef.current = false;
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      cleanup();
+      fullCleanup();
     };
-  }, [cleanup]);
+  }, [fullCleanup]);
 
-  // Auto-manage recording based on isEnabled
+  // Intelligent management based on isEnabled
   useEffect(() => {
+    if (reconnectionTimeoutRef.current) {
+      clearTimeout(reconnectionTimeoutRef.current);
+      reconnectionTimeoutRef.current = null;
+    }
+
     if (isEnabled && !isRecording) {
+      // Immediate start or quick resume
       startRecording();
     } else if (!isEnabled && isRecording) {
+      // Pause instead of full stop for quick recovery
       stopRecording();
+      
+      // Schedule full cleanup after 30 seconds of inactivity
+      reconnectionTimeoutRef.current = setTimeout(() => {
+        if (!isEnabled) {
+          fullCleanup();
+          updateStatus('Ready');
+        }
+      }, 30000);
     }
-  }, [isEnabled, isRecording, startRecording, stopRecording]);
+  }, [isEnabled, isRecording, startRecording, stopRecording, fullCleanup, updateStatus]);
+
+  // Enable persistent mode after first successful connection
+  useEffect(() => {
+    if (isRecording && !isPersistentMode) {
+      setIsPersistentMode(true);
+      console.log('Persistent mode enabled for faster recovery');
+    }
+  }, [isRecording, isPersistentMode]);
 
   return (
     <div style={{
@@ -422,7 +536,7 @@ export default function VoiceStreamer({
         width: '10px',
         height: '10px',
         borderRadius: '50%',
-        background: isRecording ? '#10b981' : '#6b7280',
+        background: isRecording ? '#10b981' : isPersistentMode ? '#f59e0b' : '#6b7280',
         animation: isRecording ? 'pulse 2s infinite' : 'none'
       }} />
       <span style={{ fontWeight: '500' }}>
@@ -437,7 +551,19 @@ export default function VoiceStreamer({
           borderRadius: '10px',
           color: '#10b981'
         }}>
-          Enhanced Mode
+          Enhanced
+        </div>
+      )}
+      {isPersistentMode && !isRecording && (
+        <div style={{
+          fontSize: '10px',
+          opacity: 0.8,
+          background: 'rgba(245,158,11,0.2)',
+          padding: '2px 8px',
+          borderRadius: '10px',
+          color: '#f59e0b'
+        }}>
+          Quick Resume
         </div>
       )}
     </div>
