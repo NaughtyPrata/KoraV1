@@ -1,4 +1,5 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
+import { fixMicrophoneIssue } from '@/utils/microphoneFix';
 
 export interface VoiceStreamerProps {
   onTranscriptReceived: (transcript: string, isFinal: boolean) => void;
@@ -520,6 +521,16 @@ export default function VoiceStreamer({
     try {
       lastEnabledTimeRef.current = Date.now();
       
+      // FORCE FRESH START - Close any existing audio context
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        console.log('🔧 Force closing existing AudioContext for fresh start');
+        await audioContextRef.current.close();
+        audioContextRef.current = null;
+        mediaStreamSourceRef.current = null;
+        gainNodeRef.current = null;
+        scriptProcessorRef.current = null;
+      }
+      
       // Quick reconnection if we have existing infrastructure
       if (isInitializedRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         console.log('Using quick resume with existing connection');
@@ -559,7 +570,7 @@ export default function VoiceStreamer({
 
       setIsRecording(true);
       isInitializedRef.current = true;
-      updateStatus('Listening (balanced)...');
+      updateStatus('Listening (enhanced)...');
       console.log('Voice recording started successfully');
       
     } catch (error) {
@@ -890,6 +901,27 @@ export default function VoiceStreamer({
             }}
           >
             Test Microphone
+          </button>
+          
+          {/* Fix Microphone Button */}
+          <button
+            onClick={() => {
+              console.log('🔧 Running microphone diagnostic...');
+              fixMicrophoneIssue();
+            }}
+            style={{
+              background: '#ef4444',
+              border: 'none',
+              color: 'white',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '9px',
+              cursor: 'pointer',
+              width: '100%',
+              marginTop: '3px'
+            }}
+          >
+            Fix Microphone Issue
           </button>
           
           {/* Test Results */}
