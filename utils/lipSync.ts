@@ -96,6 +96,20 @@ export class LipSyncController {
     }
   }
 
+  // Start lip sync with external analyser (for chunked audio)
+  startLipSyncWithAnalyser(analyser: AnalyserNode): void {
+    if (!analyser) {
+      console.error('No analyser provided for lip sync');
+      return;
+    }
+
+    console.log('Starting lip sync with external analyser');
+    this.analyser = analyser;
+    this.dataArray = new Uint8Array(analyser.frequencyBinCount);
+    this.isActive = true;
+    this.animate();
+  }
+
   stopLipSync(): void {
     this.isActive = false;
     if (this.animationId) {

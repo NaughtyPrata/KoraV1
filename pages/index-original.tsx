@@ -5,7 +5,6 @@ import VoiceStreamer from '@/components/VoiceStreamer';
 import { AvatarData } from '@/lib/readyplayerme';
 import { ChatMessage } from '@/lib/openai';
 import { LipSyncController } from '@/utils/lipSync';
-import { ChunkedAudioPlayer, createChunkedAudioPlayer, AudioChunkData } from '@/utils/chunkedAudioPlayer';
 
 interface ConversationState {
   messages: ChatMessage[];
@@ -35,8 +34,6 @@ export default function Home() {
   
   const audioRef = useRef<HTMLAudioElement>(null);
   const lipSyncRef = useRef<LipSyncController | null>(null);
-  const chunkedPlayerRef = useRef<ChunkedAudioPlayer | null>(null);
-  const [currentChunkText, setCurrentChunkText] = useState<string>('');
 
   const handleAvatarLoaded = useCallback(async (data: AvatarData) => {
     setAvatarData(data);
@@ -48,54 +45,6 @@ export default function Home() {
       lipSyncRef.current = new LipSyncController(data);
       await lipSyncRef.current.initialize();
       console.log('LipSyncController initialized');
-    }
-
-    // Initialize chunked audio player
-    if (!chunkedPlayerRef.current) {
-      chunkedPlayerRef.current = createChunkedAudioPlayer({
-        onChunkStart: (chunk: AudioChunkData) => {
-          console.log(`Starting chunk ${chunk.index + 1}: "${chunk.text}"`);
-          setCurrentChunkText(chunk.text);
-          
-          // Start lip sync for this chunk
-          if (lipSyncRef.current) {
-            // We'll need to get the current audio element from the player
-            const analyser = chunkedPlayerRef.current?.getAnalyser();
-            if (analyser) {
-              lipSyncRef.current.startLipSyncWithAnalyser(analyser);
-            }
-          }
-        },
-        onChunkEnd: (chunk: AudioChunkData) => {
-          console.log(`Finished chunk ${chunk.index + 1}`);
-          setCurrentChunkText('');
-        },
-        onComplete: () => {
-          console.log('All chunks completed');
-          setConversationState(prev => ({
-            ...prev,
-            isPlaying: false
-          }));
-          setStatus('Ready');
-          setCurrentChunkText('');
-          
-          // Stop lip sync
-          if (lipSyncRef.current) {
-            lipSyncRef.current.stopLipSync();
-          }
-        },
-        onError: (error: Error) => {
-          console.error('Chunked playback error:', error);
-          setStatus(`Audio error: ${error.message}`);
-          setConversationState(prev => ({
-            ...prev,
-            isPlaying: false
-          }));
-          setCurrentChunkText('');
-        },
-        preloadNext: true
-      });
-      console.log('ChunkedAudioPlayer initialized');
     }
   }, []);
 
@@ -207,47 +156,174 @@ export default function Home() {
         isLoading: false
       }));
 
-      setStatus('Generating chunked speech...');
+      setStatus('Generating speech...');
 
-      // Generate chunked speech
-      const speechResponse = await fetch('/api/speech-chunked', {
+      // Generate speech
+      const speechResponse = await fetch('/api/speech', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: text,
-          maxSentencesPerChunk: 2,
-          streaming: false // Use batch mode for now
+          text: text
         }),
       });
 
       if (!speechResponse.ok) {
-        throw new Error('Failed to generate chunked speech');
+        throw new Error('Failed to generate speech');
       }
 
-      const { chunks, totalChunks } = await speechResponse.json();
-      console.log(`Received ${totalChunks} speech chunks`);
+      const { audioData, mimeType } = await speechResponse.json();
 
-      // Load chunks into the chunked player
-      if (chunkedPlayerRef.current) {
-        setConversationState(prev => ({
-          ...prev,
-          isPlaying: true
-        }));
+      // Play audio
+      if (audioRef.current) {
+        console.log('Audio data received:', { 
+          audioDataLength: audioData.length, 
+          mimeType,
+          userAgent: navigator.userAgent 
+        });
         
-        setStatus('Speaking...');
-        
-        // Convert the chunks to the format expected by ChunkedAudioPlayer
-        const audioChunks: AudioChunkData[] = chunks.map((chunk: any) => ({
-          index: chunk.index,
-          text: chunk.text,
-          audioData: chunk.audioData,
-          mimeType: chunk.mimeType
-        }));
-
-        chunkedPlayerRef.current.loadChunks(audioChunks);
-        await chunkedPlayerRef.current.play();
+        try {
+          // Convert base64 to binary data
+          const binaryString = atob(audioData);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          console.log('Audio data processed:', { 
+            originalDataLength: audioData.length,
+            binaryStringLength: binaryString.length,
+            bytesLength: bytes.length,
+            mimeType,
+            isChrome: navigator.userAgent.includes('Chrome'),
+            isMac: navigator.platform.includes('Mac')
+          });
+          
+          setConversationState(prev => ({
+            ...prev,
+            isPlaying: true
+          }));
+          
+          setStatus('Speaking...');
+          
+          // Use Web Audio API directly for Chrome on macOS
+          const isChromeMac = navigator.userAgent.includes('Chrome') && navigator.platform.includes('Mac');
+          
+          if (isChromeMac && (window.AudioContext || (window as any).webkitAudioContext)) {
+            console.log('Using Web Audio API for Chrome on macOS');
+            
+            try {
+              const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+              const audioContext = new AudioContextClass();
+              
+              // Resume context if suspended (required by Chrome)
+              if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+              }
+              
+              const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+              const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+              const source = audioContext.createBufferSource();
+              
+              // Create analyser for lip sync
+              const analyser = audioContext.createAnalyser();
+              analyser.fftSize = 256;
+              
+              // Connect: source -> analyser -> destination
+              source.connect(analyser);
+              analyser.connect(audioContext.destination);
+              
+              source.buffer = audioBuffer;
+              source.start(0);
+              
+              console.log('Web Audio API playback started successfully');
+              
+              // Store analyser for lip sync (we'll pass this to the avatar)
+              (audioRef.current as any)._webAudioAnalyser = analyser;
+              (audioRef.current as any)._webAudioContext = audioContext;
+              
+              console.log('Stored Web Audio API references on audio element:', {
+                analyser: analyser,
+                audioContext: audioContext,
+                audioElement: audioRef.current
+              });
+              
+              // Start lip sync
+              if (lipSyncRef.current && audioRef.current) {
+                console.log('Starting lip sync with Web Audio API');
+                lipSyncRef.current.startLipSync(audioRef.current);
+              }
+              
+              // Handle end event
+              source.onended = () => {
+                setConversationState(prev => ({
+                  ...prev,
+                  isPlaying: false
+                }));
+                setStatus('Ready');
+                
+                // Stop lip sync
+                if (lipSyncRef.current) {
+                  lipSyncRef.current.stopLipSync();
+                }
+                
+                // Clean up
+                (audioRef.current as any)._webAudioAnalyser = null;
+                (audioRef.current as any)._webAudioContext = null;
+                audioContext.close();
+              };
+              
+            } catch (webAudioError) {
+              console.error('Web Audio API failed:', webAudioError);
+              throw webAudioError;
+            }
+          } else {
+            // Fallback to audio element for other browsers
+            console.log('Using audio element fallback');
+            
+            const audioBlob = new Blob([bytes], { type: mimeType });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            audioRef.current.src = audioUrl;
+            
+            await audioRef.current.play();
+            console.log('Audio element playback started successfully');
+            
+            // Start lip sync for fallback path
+            if (lipSyncRef.current && audioRef.current) {
+              console.log('Starting lip sync with audio element');
+              lipSyncRef.current.startLipSync(audioRef.current);
+            }
+            
+            // Clean up the blob URL after use
+            setTimeout(() => {
+              URL.revokeObjectURL(audioUrl);
+            }, 1000);
+          }
+          
+        } catch (error: any) {
+          console.error('Audio play error:', error);
+          console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          });
+          
+          if (error.name === 'NotAllowedError') {
+            setStatus('Click anywhere to enable audio');
+            setConversationState(prev => ({
+              ...prev,
+              isPlaying: false
+            }));
+          } else {
+            setStatus(`Audio error: ${error.message}`);
+            setConversationState(prev => ({
+              ...prev,
+              isPlaying: false
+            }));
+          }
+        }
       }
 
     } catch (error) {
@@ -298,20 +374,50 @@ export default function Home() {
     setVoiceEnabled(!voiceEnabled);
   }, [voiceEnabled, initializeAudio]);
 
-  // Cleanup effect
+  // Handle audio events
   useEffect(() => {
-    return () => {
-      // Cleanup chunked audio player
-      if (chunkedPlayerRef.current) {
-        chunkedPlayerRef.current.dispose();
-        chunkedPlayerRef.current = null;
-      }
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handleAudioEnd = () => {
+      setConversationState(prev => ({
+        ...prev,
+        isPlaying: false
+      }));
+      setStatus('Ready');
       
-      // Cleanup lip sync controller
+      // Stop lip sync
       if (lipSyncRef.current) {
-        lipSyncRef.current.dispose();
-        lipSyncRef.current = null;
+        lipSyncRef.current.stopLipSync();
       }
+    };
+
+    const handleAudioError = (e: any) => {
+      console.error('Audio element error event:', e);
+      console.error('Audio error details:', {
+        error: e.target?.error,
+        code: e.target?.error?.code,
+        message: e.target?.error?.message,
+        networkState: e.target?.networkState,
+        readyState: e.target?.readyState
+      });
+      
+      setConversationState(prev => ({
+        ...prev,
+        isPlaying: false
+      }));
+      
+      const errorCode = e.target?.error?.code;
+      const errorMessage = e.target?.error?.message || 'Unknown audio error';
+      setStatus(`Audio error (${errorCode}): ${errorMessage}`);
+    };
+
+    audio.addEventListener('ended', handleAudioEnd);
+    audio.addEventListener('error', handleAudioError);
+
+    return () => {
+      audio.removeEventListener('ended', handleAudioEnd);
+      audio.removeEventListener('error', handleAudioError);
     };
   }, []);
 
@@ -385,49 +491,6 @@ export default function Home() {
             </div>
             <div style={{ fontWeight: '500' }}>
               "{currentTranscript}"
-            </div>
-          </div>
-        )}
-
-        {/* Current Chunk Display */}
-        {currentChunkText && (
-          <div style={{
-            position: 'absolute',
-            bottom: '120px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'rgba(34, 197, 94, 0.9)',
-            color: 'white',
-            padding: '15px 20px',
-            borderRadius: '15px',
-            fontSize: '16px',
-            maxWidth: '600px',
-            textAlign: 'center',
-            zIndex: 1000,
-            border: '1px solid rgba(34, 197, 94, 0.5)',
-            backdropFilter: 'blur(10px)',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)'
-          }}>
-            <div style={{ 
-              fontSize: '12px', 
-              opacity: 0.7, 
-              marginBottom: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}>
-              <div style={{
-                width: '8px',
-                height: '8px',
-                background: '#ffffff',
-                borderRadius: '50%',
-                animation: 'pulse 1s infinite'
-              }} />
-              Speaking...
-            </div>
-            <div style={{ fontWeight: '500' }}>
-              "{currentChunkText}"
             </div>
           </div>
         )}
