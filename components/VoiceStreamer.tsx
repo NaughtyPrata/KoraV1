@@ -26,6 +26,9 @@ export default function VoiceStreamer({
   const [micLevel, setMicLevel] = useState(0);
   const [gateStatus, setGateStatus] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [micPermission, setMicPermission] = useState<'unknown' | 'granted' | 'denied' | 'prompt'>('unknown');
+  const [debugInfo, setDebugInfo] = useState<string>('');
+  const [micTestResults, setMicTestResults] = useState<string[]>([]);
   
   // Refs for audio processing
   const wsRef = useRef<WebSocket | null>(null);
@@ -257,6 +260,14 @@ export default function VoiceStreamer({
     return buffer;
   }, []);
 
+  // Enable persistent mode after first successful connection
+  useEffect(() => {
+    if (isRecording && !isPersistentMode) {
+      setIsPersistentMode(true);
+      console.log('Persistent mode enabled for faster recovery');
+    }
+  }, [isRecording, isPersistentMode]);
+
   // Enhanced noise gate function
   const applyNoiseGate = useCallback((inputData: Float32Array): Float32Array => {
     const outputData = new Float32Array(inputData.length);
@@ -306,55 +317,115 @@ export default function VoiceStreamer({
 
     // Get microphone access with ENHANCED noise suppression constraints
     if (!audioStreamRef.current) {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 16000,
-          channelCount: 1,
-          // AGGRESSIVE noise suppression settings
-          echoCancellation: true,
-          noiseSuppression: true, 
-          autoGainControl: true,
-          // Browser-specific advanced constraints
-          ...({
-            googEchoCancellation: true,
-            googAutoGainControl: true,
-            googNoiseSuppression: true,
-            googHighpassFilter: true,
-            googNoiseSuppression2: true,
-            googEchoCancellation2: true,
-            googAutoGainControl2: true,
-            googDucking: false,
-            // Additional noise suppression settings
-            googAudioMirroring: false,
-            googDAEchoCancellation: true,
-            googNoiseReduction: true
-          } as any)
-        }
-      });
+      console.log('Requesting microphone access...');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            // AGGRESSIVE noise suppression settings
+            echoCancellation: true,
+            noiseSuppression: true, 
+            autoGainControl: true,
+            // Browser-specific advanced constraints
+            ...({
+              googEchoCancellation: true,
+              googAutoGainControl: true,
+              googNoiseSuppression: true,
+              googHighpassFilter: true,
+              googNoiseSuppression2: true,
+              googEchoCancellation2: true,
+              googAutoGainControl2: true,
+              googDucking: false,
+              // Additional noise suppression settings
+              googAudioMirroring: false,
+              googDAEchoCancellation: true,
+              googNoiseReduction: true
+            } as any)
+          }
+        });
 
-      audioStreamRef.current = stream;
-      console.log('Audio stream acquired with enhanced noise suppression:', stream.getAudioTracks()[0].getSettings());
+        audioStreamRef.current = stream;
+        const audioTracks = stream.getAudioTracks();
+        console.log('✅ Audio stream acquired successfully');
+        console.log('Audio tracks:', audioTracks.length);
+        audioTracks.forEach((track, index) => {
+          console.log(`Track ${index}:`, {
+            label: track.label,
+            enabled: track.enabled,
+            muted: track.muted,
+            readyState: track.readyState,
+            settings: track.getSettings()
+          });
+        });
+      } catch (error) {
+        console.error('❌ Failed to get microphone access:', error);
+        console.error('Error details:', {
+          name: error.name,
+          message: error.message,
+          constraint: error.constraint
+        });
+        throw new Error(`Microphone access denied: ${error.message}`);
+      }
     }
 
     // Create AudioContext with optimal settings (reuse if possible)
     if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+      console.log('Creating new AudioContext...');
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
         sampleRate: 16000,
         latencyHint: 'interactive' // Optimize for low latency
       });
 
       audioContextRef.current = audioContext;
+      console.log('✅ AudioContext created:', {
+        state: audioContext.state,
+        sampleRate: audioContext.sampleRate,
+        currentTime: audioContext.currentTime
+      });
     }
 
     // Resume context if suspended
     if (audioContextRef.current.state === 'suspended') {
+      console.log('Resuming suspended AudioContext...');
       await audioContextRef.current.resume();
+      console.log('✅ AudioContext resumed, state:', audioContextRef.current.state);
     }
 
     // Create media stream source (reuse if possible)
     if (!mediaStreamSourceRef.current && audioStreamRef.current) {
+      console.log('Creating MediaStreamSource...');
       const mediaStreamSource = audioContextRef.current.createMediaStreamSource(audioStreamRef.current);
       mediaStreamSourceRef.current = mediaStreamSource;
+      console.log('✅ MediaStreamSource created');
+      
+      // Test if we're getting any audio data
+      const testProcessor = audioContextRef.current.createScriptProcessor(1024, 1, 1);
+      testProcessor.onaudioprocess = (event) => {
+        const inputBuffer = event.inputBuffer;
+        const inputData = inputBuffer.getChannelData(0);
+        let sum = 0;
+        for (let i = 0; i < inputData.length; i++) {
+          sum += Math.abs(inputData[i]);
+        }
+        const average = sum / inputData.length;
+        if (average > 0.001) {
+          console.log('🎤 Audio input detected! Level:', average.toFixed(6));
+          testProcessor.disconnect();
+        }
+      };
+      mediaStreamSource.connect(testProcessor);
+      testProcessor.connect(audioContextRef.current.destination);
+      
+      // Clean up test processor after 5 seconds
+      setTimeout(() => {
+        try {
+          testProcessor.disconnect();
+          console.log('Test processor cleaned up');
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }, 5000);
     }
 
     // Create gain node for volume control (reuse if possible)
@@ -602,13 +673,25 @@ export default function VoiceStreamer({
     }
   }, [isEnabled, isRecording, startRecording, stopRecording, fullCleanup, updateStatus]);
 
-  // Enable persistent mode after first successful connection
+  // Check microphone permission status
   useEffect(() => {
-    if (isRecording && !isPersistentMode) {
-      setIsPersistentMode(true);
-      console.log('Persistent mode enabled for faster recovery');
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: 'microphone' as PermissionName })
+        .then(result => {
+          setMicPermission(result.state as any);
+          console.log('Microphone permission:', result.state);
+          
+          result.onchange = () => {
+            setMicPermission(result.state as any);
+            console.log('Microphone permission changed:', result.state);
+          };
+        })
+        .catch(err => {
+          console.log('Permission check not supported:', err);
+          setMicPermission('unknown');
+        });
     }
-  }, [isRecording, isPersistentMode]);
+  }, []);
 
   return (
     <div style={{
@@ -731,7 +814,110 @@ export default function VoiceStreamer({
               Less Sensitive
             </button>
           </div>
+          
+          {/* Microphone Test Button */}
+          <button
+            onClick={async () => {
+              setMicTestResults(['Testing microphone...']);
+              try {
+                // Test basic microphone access
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                setMicTestResults(prev => [...prev, '✅ Microphone access granted']);
+                
+                // Test audio tracks
+                const tracks = stream.getAudioTracks();
+                setMicTestResults(prev => [...prev, `✅ Found ${tracks.length} audio track(s)`]);
+                
+                if (tracks.length > 0) {
+                  const track = tracks[0];
+                  setMicTestResults(prev => [...prev, `✅ Track label: ${track.label || 'Unknown'}`, `✅ Track enabled: ${track.enabled}`, `✅ Track muted: ${track.muted}`]);
+                  
+                  // Test AudioContext
+                  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+                  if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                  }
+                  setMicTestResults(prev => [...prev, `✅ AudioContext state: ${audioContext.state}`]);
+                  
+                  // Test audio levels for 3 seconds
+                  const source = audioContext.createMediaStreamSource(stream);
+                  const processor = audioContext.createScriptProcessor(1024, 1, 1);
+                  let maxLevel = 0;
+                  let samples = 0;
+                  
+                  processor.onaudioprocess = (event) => {
+                    const inputData = event.inputBuffer.getChannelData(0);
+                    let sum = 0;
+                    for (let i = 0; i < inputData.length; i++) {
+                      sum += Math.abs(inputData[i]);
+                    }
+                    const average = sum / inputData.length;
+                    if (average > maxLevel) maxLevel = average;
+                    samples++;
+                  };
+                  
+                  source.connect(processor);
+                  processor.connect(audioContext.destination);
+                  
+                  setTimeout(() => {
+                    processor.disconnect();
+                    source.disconnect();
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    if (maxLevel > 0.001) {
+                      setMicTestResults(prev => [...prev, `✅ Audio detected! Max level: ${maxLevel.toFixed(6)}`, `✅ Processed ${samples} audio chunks`]);
+                    } else {
+                      setMicTestResults(prev => [...prev, `❌ No audio detected in 3 seconds`, `Max level was: ${maxLevel.toFixed(6)}`, 'Try speaking louder or check microphone']);
+                    }
+                  }, 3000);
+                  
+                  setMicTestResults(prev => [...prev, '🎤 Testing audio levels for 3 seconds...']);
+                }
+              } catch (error: any) {
+                setMicTestResults(prev => [...prev, `❌ Error: ${error.message}`]);
+              }
+            }}
+            style={{
+              background: '#3b82f6',
+              border: 'none',
+              color: 'white',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '9px',
+              cursor: 'pointer',
+              width: '100%',
+              marginTop: '5px'
+            }}
+          >
+            Test Microphone
+          </button>
+          
+          {/* Test Results */}
+          {micTestResults.length > 0 && (
+            <div style={{
+              fontSize: '8px',
+              marginTop: '5px',
+              maxHeight: '100px',
+              overflow: 'auto',
+              background: 'rgba(0,0,0,0.5)',
+              padding: '5px',
+              borderRadius: '3px'
+            }}>
+              {micTestResults.map((result, index) => (
+                <div key={index} style={{ marginBottom: '2px' }}>{result}</div>
+              ))}
+            </div>
+          )}
           <div style={{ fontSize: '9px', opacity: 0.7 }}>Green dot = mic active</div>
+          <div style={{ fontSize: '9px', opacity: 0.7, marginTop: '5px' }}>
+            Permission: {micPermission}
+          </div>
+          {micLevel === 0 && (
+            <div style={{ fontSize: '9px', color: '#ef4444', marginTop: '5px' }}>
+              ⚠️ No audio detected!
+              <br />Check mic permissions & hardware
+            </div>
+          )}
         </div>
       )}
       
