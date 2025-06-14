@@ -29,11 +29,9 @@ export default function Home() {
   const [countdownFinished, setCountdownFinished] = useState(false);
   const [avatarLoaded, setAvatarLoaded] = useState(false);
   
-  // Voice streaming states
+  // Voice states
   const [voiceEnabled, setVoiceEnabled] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [currentTranscript, setCurrentTranscript] = useState('');
-  const [voiceStatus, setVoiceStatus] = useState('Ready');
   
   const audioRef = useRef<HTMLAudioElement>(null);
   const lipSyncRef = useRef<LipSyncController | null>(null);
@@ -108,7 +106,7 @@ export default function Home() {
     }
   }, [audioEnabled]);
 
-  // Process message (shared between text and voice input)
+  // Process message
   const processMessage = useCallback(async (messageText: string) => {
     if (!messageText.trim() || conversationState.isLoading || !isAvatarReady) return;
 
@@ -352,7 +350,7 @@ export default function Home() {
     }
   }, [handleSendMessage]);
 
-  // Handle voice transcript
+  // Voice handlers
   const handleTranscriptReceived = useCallback((transcript: string, isFinal: boolean) => {
     setCurrentTranscript(transcript);
     
@@ -364,16 +362,8 @@ export default function Home() {
     }
   }, [processMessage]);
 
-  // Handle voice streamer status
-  const handleVoiceStatusChange = useCallback((status: string) => {
-    setVoiceStatus(status);
-    setIsListening(status === 'Listening...');
-  }, []);
-
-  // Handle voice errors
   const handleVoiceError = useCallback((error: string) => {
     console.error('Voice error:', error);
-    setVoiceStatus(`Error: ${error}`);
   }, []);
 
   // Toggle voice input
@@ -452,26 +442,16 @@ export default function Home() {
 
         {/* Voice Streamer */}
         {isAvatarReady && (
-                  <VoiceStreamer
-          isEnabled={voiceEnabled && !conversationState.isPlaying} // Don't listen while speaking
-          apiKey={process.env.GLADIA_API_KEY || '42f4192e-55d4-4a27-830a-d62c2cb32c03'}
-          onTranscriptReceived={handleTranscriptReceived}
-          onStatusChange={handleVoiceStatusChange}
-          onError={handleVoiceError}
-        />
+          <VoiceStreamer
+            isEnabled={voiceEnabled && !conversationState.isPlaying}
+            apiKey={process.env.GLADIA_API_KEY || '42f4192e-55d4-4a27-830a-d62c2cb32c03'}
+            onTranscriptReceived={handleTranscriptReceived}
+            onError={handleVoiceError}
+          />
         )}
 
         {/* Hidden audio element */}
         <audio ref={audioRef} style={{ display: 'none' }} />
-
-        {/* DEBUG ONLY: Status Indicator - Turn on only when debugging */}
-        {/* <div className={`status-indicator ${conversationState.isPlaying ? 'speaking' : conversationState.isLoading ? 'listening' : ''}`}>
-          {conversationState.isLoading && <div className="loading-spinner" />}
-          {!audioEnabled && status.includes('Click') && (
-            <div style={{ color: '#ff6b6b', fontWeight: 'bold' }}>🔊 </div>
-          )}
-          {status}
-        </div> */}
 
         {/* Voice Transcript Display */}
         {currentTranscript && (
@@ -488,7 +468,7 @@ export default function Home() {
             maxWidth: '600px',
             textAlign: 'center',
             zIndex: 1000,
-            border: '1px solid rgba(239, 68, 68, 0.5)',
+            border: '1px solid rgba(16, 185, 129, 0.5)',
             backdropFilter: 'blur(10px)',
             boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)'
           }}>
@@ -504,7 +484,7 @@ export default function Home() {
               <div style={{
                 width: '8px',
                 height: '8px',
-                background: '#ef4444',
+                background: '#10b981',
                 borderRadius: '50%',
                 animation: 'pulse 2s infinite'
               }} />
@@ -515,8 +495,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
-
 
         {/* Countdown Overlay */}
         {!isAvatarReady && (
@@ -650,16 +628,6 @@ export default function Home() {
             {!isAvatarReady ? 'Loading...' : conversationState.isLoading ? 'Processing...' : 'Send'}
           </button>
         </div>
-
-        {/* DEBUG ONLY: Avatar Info - Turn on only when debugging */}
-        {/* <div className="avatar-info">
-          <div><strong>Status:</strong> {status}</div>
-          {voiceEnabled && <div><strong>Voice:</strong> {voiceStatus}</div>}
-          <div><strong>Messages:</strong> {conversationState.messages.length}</div>
-          {avatarData && (
-            <div><strong>Avatar:</strong> Loaded</div>
-          )}
-        </div> */}
 
         {/* Conversation History (Optional) */}
         {conversationState.messages.length > 0 && (

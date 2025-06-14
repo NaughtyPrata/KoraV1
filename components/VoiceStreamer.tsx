@@ -1,5 +1,4 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
-import { fixMicrophoneIssue } from '@/utils/microphoneFix';
 
 export interface VoiceStreamerProps {
   onTranscriptReceived: (transcript: string, isFinal: boolean) => void;
@@ -7,11 +6,6 @@ export interface VoiceStreamerProps {
   onStatusChange?: (status: string) => void;
   isEnabled: boolean;
   apiKey: string;
-}
-
-interface GladiaSession {
-  id: string;
-  url: string;
 }
 
 export default function VoiceStreamer({ 
@@ -23,32 +17,14 @@ export default function VoiceStreamer({
 }: VoiceStreamerProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState('Ready');
-  const [isPersistentMode, setIsPersistentMode] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
-  const [gateStatus, setGateStatus] = useState(false);
-  const [showControls, setShowControls] = useState(false);
-  const [micPermission, setMicPermission] = useState<'unknown' | 'granted' | 'denied' | 'prompt'>('unknown');
-  const [debugInfo, setDebugInfo] = useState<string>('');
-  const [micTestResults, setMicTestResults] = useState<string[]>([]);
   
   // Refs for audio processing
-  const wsRef = useRef<WebSocket | null>(null);
+  const websocketRef = useRef<WebSocket | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const mediaStreamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const sessionRef = useRef<GladiaSession | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
-  const noiseGateRef = useRef<{ threshold: number; lastVolume: number; gateOpen: boolean }>({
-    threshold: 0.008, // MUCH lower threshold - more sensitive to voice
-    lastVolume: 0,
-    gateOpen: false
-  });
-  
-  // Recovery optimization refs
-  const lastEnabledTimeRef = useRef<number>(0);
-  const reconnectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isInitializedRef = useRef(false);
 
   const updateStatus = useCallback((newStatus: string) => {
     setStatus(newStatus);
@@ -60,79 +36,41 @@ export default function VoiceStreamer({
     onError?.(error);
   }, [onError]);
 
-  const initializeGladiaSession = useCallback(async (): Promise<GladiaSession> => {
-    console.log('Initializing Gladia session...');
-    console.log('API Key available:', !!apiKey);
+  // Create Gladia session
+  const createGladiaSession = useCallback(async () => {
+    console.log('Creating Gladia session...');
     
-    if (!apiKey) {
-      throw new Error('Gladia API key is required');
-    }
-
     const config = {
-      // Audio settings optimized for real-time processing
+      // Audio settings
       encoding: 'wav/pcm',
       sample_rate: 16000,
       bit_depth: 16,
       channels: 1,
       
-      // Model selection - Solaria is the latest and most accurate
+      // Model
       model: 'solaria-1',
       
-      // Endpointing configuration - moderately conservative
-      endpointing: 0.6, // Reduced from 0.8 to 0.6 seconds - more responsive but still filtered
-      maximum_duration_without_endpointing: 10, // Keep at 10 seconds
-      
-      // Language configuration
+      // Language
       language_config: {
-        languages: ['en'], // Specify English for better accuracy
-        code_switching: false // Disable since we're only using English
+        languages: ['en'],
+        code_switching: false
       },
       
-      // Pre-processing enhancements - BALANCED SENSITIVITY
+      // Real-time settings
+      endpointing: 0.5,
+      maximum_duration_without_endpointing: 8,
+      
+      // Pre-processing
       pre_processing: {
-        audio_enhancer: true, // Keep audio enhancement for noise reduction
-        speech_threshold: 0.4 // MORE SENSITIVE: 0.4 - easier to trigger voice detection
+        audio_enhancer: true,
+        speech_threshold: 0.5
       },
       
-      // Real-time processing configuration
-      realtime_processing: {
-        words_accurate_timestamps: true, // Enable word-level timestamps
-        custom_vocabulary: true, // Enable custom vocabulary
-        custom_vocabulary_config: {
-          vocabulary: [
-            // Common tech/conversation words that might be misheard
-            { value: "books", pronunciations: ["bucks", "box", "booboo"], intensity: 0.8 },
-            { value: "look", pronunciations: ["took", "loot"], intensity: 0.7 },
-            { value: "looks", pronunciations: ["lucks", "loops"], intensity: 0.7 },
-            { value: "hello", pronunciations: ["halo", "hull"], intensity: 0.8 },
-            { value: "avatar", pronunciations: ["avator"], intensity: 0.9 },
-            { value: "voice", pronunciations: ["boys", "noise"], intensity: 0.8 },
-            { value: "chat", pronunciations: ["cat", "that"], intensity: 0.7 },
-            { value: "talk", pronunciations: ["took", "walk"], intensity: 0.7 },
-            { value: "speak", pronunciations: ["speak", "spike"], intensity: 0.8 },
-            { value: "say", pronunciations: ["stay", "way"], intensity: 0.7 },
-            { value: "tell", pronunciations: ["well", "hell"], intensity: 0.7 },
-            { value: "ask", pronunciations: ["ask", "ax"], intensity: 0.8 },
-            { value: "kora", pronunciations: ["core", "coral", "korea"], intensity: 0.9 },
-            { value: "AI", pronunciations: ["I", "eye"], intensity: 0.8 },
-            { value: "help", pronunciations: ["kelp", "yelp"], intensity: 0.8 },
-            { value: "can", pronunciations: ["can", "ken"], intensity: 0.7 },
-            { value: "could", pronunciations: ["good", "would"], intensity: 0.7 },
-            { value: "should", pronunciations: ["should", "wood"], intensity: 0.7 },
-            { value: "would", pronunciations: ["would", "wood"], intensity: 0.7 },
-            { value: "please", pronunciations: ["please", "place"], intensity: 0.8 },
-            { value: "thank", pronunciations: ["tank", "think"], intensity: 0.8 },
-            { value: "thanks", pronunciations: ["tanks", "thinks"], intensity: 0.8 }
-          ],
-          default_intensity: 0.6 // Default intensity for vocabulary matching
-        }
-      },
-      
-      // Message configuration - optimize for real-time feedback
+      // Message config
       messages_config: {
-        receive_partial_transcripts: true, // Show partial results for immediate feedback
-        receive_final_transcripts: true, // Also get final, more accurate results
-        receive_speech_events: false, // Disable to reduce noise
+        receive_partial_transcripts: true,
+        receive_final_transcripts: true,
+        receive_speech_events: false,
         receive_pre_processing_events: false,
         receive_realtime_processing_events: false,
         receive_post_processing_events: false,
@@ -140,9 +78,7 @@ export default function VoiceStreamer({
         receive_lifecycle_events: false
       }
     };
-
-    console.log('Gladia session config:', JSON.stringify(config, null, 2));
-
+    
     try {
       const response = await fetch('https://api.gladia.io/v2/live', {
         method: 'POST',
@@ -152,557 +88,270 @@ export default function VoiceStreamer({
         },
         body: JSON.stringify(config)
       });
-
-      console.log('Gladia API response status:', response.status);
-      console.log('Gladia API response headers:', Object.fromEntries(response.headers.entries()));
-
+      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Gladia API error response:', errorText);
-        throw new Error(`Gladia API failed (${response.status}): ${errorText}`);
+        throw new Error(`Gladia API error: ${errorText}`);
       }
-
+      
       const session = await response.json();
-      console.log('Gladia session created successfully:', session);
+      console.log('Gladia session created:', session);
       return session;
+      
     } catch (error) {
-      console.error('Gladia session initialization error:', error);
-      throw new Error(`Failed to initialize Gladia session: ${error}`);
+      console.error('Failed to create Gladia session:', error);
+      throw error;
     }
   }, [apiKey]);
 
-  const connectWebSocket = useCallback((session: GladiaSession): Promise<WebSocket> => {
-    return new Promise((resolve, reject) => {
+  // Connect to WebSocket
+  const connectWebSocket = useCallback((session: any) => {
+    return new Promise<WebSocket>((resolve, reject) => {
       console.log('Connecting to WebSocket:', session.url);
+      
       const ws = new WebSocket(session.url);
       
-      // Set connection timeout
-      const connectionTimeout = setTimeout(() => {
-        if (ws.readyState === WebSocket.CONNECTING) {
-          ws.close();
-          reject(new Error('WebSocket connection timeout'));
-        }
-      }, 10000); // 10 second timeout
-
       ws.onopen = () => {
-        clearTimeout(connectionTimeout);
-        console.log('WebSocket connected successfully');
+        console.log('✅ WebSocket connected');
         resolve(ws);
       };
-
+      
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           
-          switch (data.type) {
-            case 'transcript':
-              if (data.data && data.data.utterance) {
-                const utterance = data.data.utterance;
-                const isFinal = data.data.is_final || false;
-                const text = utterance.text || '';
-                const confidence = utterance.confidence || 0;
-                
-                // More permissive confidence filtering to catch your voice
-                if (text.trim() && confidence > 0.45) { // LOWERED to 0.45 - more sensitive to speech
-                  console.log('Transcript received:', { text, isFinal, confidence });
-                  onTranscriptReceived(text, isFinal);
-                } else if (text.trim()) {
-                  console.log('Transcript filtered (low confidence):', { text, confidence });
-                }
-              }
-              break;
-            case 'error':
-              console.error('Gladia WebSocket error:', data);
-              logError(`Gladia error: ${data.message || 'Unknown error'}`);
-              break;
-            case 'speech_event':
-              // Handle speech events if needed
-              break;
-            default:
-              // Ignore other message types
-              break;
+          if (data.type === 'transcript' && data.data && data.data.utterance) {
+            const utterance = data.data.utterance;
+            const text = utterance.text || '';
+            const isFinal = data.data.is_final || false;
+            const confidence = utterance.confidence || 0;
+            
+            if (text.trim()) {
+              console.log(`Transcript [${isFinal ? 'FINAL' : 'PARTIAL'}] (${confidence.toFixed(2)}): ${text}`);
+              onTranscriptReceived(text, isFinal);
+            }
           }
+          
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
-          logError(`Error parsing WebSocket message: ${error}`);
         }
       };
-
+      
       ws.onerror = (error) => {
-        clearTimeout(connectionTimeout);
-        console.error('WebSocket error event:', error);
-        const errorMessage = error instanceof Error ? error.message : 'WebSocket connection failed';
-        reject(new Error(errorMessage));
+        console.error('WebSocket error:', error);
+        reject(error);
       };
-
+      
       ws.onclose = (event) => {
-        clearTimeout(connectionTimeout);
-        console.log('WebSocket closed:', event.code, event.reason);
-        if (event.code === 1000) {
-          updateStatus('Session completed');
-        } else {
-          updateStatus('Connection lost - Ready to retry');
-        }
+        console.log(`WebSocket closed: ${event.code} ${event.reason}`);
       };
+      
+      // Connection timeout
+      setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+          reject(new Error('WebSocket connection timeout'));
+        }
+      }, 10000);
     });
-  }, [onTranscriptReceived, logError, updateStatus]);
+  }, [onTranscriptReceived]);
 
+  // Get microphone access
+  const getMicrophoneAccess = useCallback(async () => {
+    console.log('Requesting microphone access...');
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      
+      console.log('✅ Microphone access granted');
+      return stream;
+      
+    } catch (error) {
+      console.error('❌ Microphone access failed:', error);
+      throw error;
+    }
+  }, []);
+
+  // Convert Float32 to PCM16
   const float32ToPCM16 = useCallback((float32Array: Float32Array): ArrayBuffer => {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
     let offset = 0;
-
+    
     for (let i = 0; i < float32Array.length; i++, offset += 2) {
       let sample = Math.max(-1, Math.min(1, float32Array[i]));
       sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
       view.setInt16(offset, sample, true); // little endian
     }
-
+    
     return buffer;
   }, []);
 
-  // Enable persistent mode after first successful connection
-  useEffect(() => {
-    if (isRecording && !isPersistentMode) {
-      setIsPersistentMode(true);
-      console.log('Persistent mode enabled for faster recovery');
-    }
-  }, [isRecording, isPersistentMode]);
-
-  // Enhanced noise gate function
-  const applyNoiseGate = useCallback((inputData: Float32Array): Float32Array => {
-    const outputData = new Float32Array(inputData.length);
-    const gate = noiseGateRef.current;
+  // Setup audio processing
+  const setupAudioProcessing = useCallback((stream: MediaStream) => {
+    console.log('Setting up audio processing...');
     
-    // Calculate RMS (Root Mean Square) volume
-    let sum = 0;
-    for (let i = 0; i < inputData.length; i++) {
-      sum += inputData[i] * inputData[i];
-    }
-    const rms = Math.sqrt(sum / inputData.length);
+    // Create AudioContext
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+      sampleRate: 16000
+    });
     
-    // Smooth the volume reading
-    gate.lastVolume = gate.lastVolume * 0.9 + rms * 0.1;
+    audioContextRef.current = audioContext;
+    console.log('AudioContext created:', audioContext.state);
     
-    // Gate logic with hysteresis to avoid chattering
-    if (gate.lastVolume > gate.threshold) {
-      gate.gateOpen = true;
-    } else if (gate.lastVolume < gate.threshold * 0.7) { // Lower threshold for closing
-      gate.gateOpen = false;
+    if (audioContext.state === 'suspended') {
+      audioContext.resume().then(() => {
+        console.log('AudioContext resumed');
+      });
     }
     
-    // Apply gate
-    if (gate.gateOpen) {
-      // Gate is open - pass audio through with slight gain
+    // Create media stream source
+    const mediaStreamSource = audioContext.createMediaStreamSource(stream);
+    mediaStreamSourceRef.current = mediaStreamSource;
+    console.log('MediaStreamSource created');
+    
+    // Create script processor
+    const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+    scriptProcessorRef.current = scriptProcessor;
+    console.log('ScriptProcessor created');
+    
+    // Process audio data
+    scriptProcessor.onaudioprocess = (event) => {
+      if (!websocketRef.current || websocketRef.current.readyState !== WebSocket.OPEN) return;
+      
+      const inputBuffer = event.inputBuffer;
+      const inputData = inputBuffer.getChannelData(0);
+      
+      // Calculate audio level for visualization
+      let sum = 0;
       for (let i = 0; i < inputData.length; i++) {
-        outputData[i] = inputData[i] * 1.2; // Slight boost for intentional speech
+        sum += Math.abs(inputData[i]);
       }
-    } else {
-      // Gate is closed - silence the audio
-      outputData.fill(0);
-    }
-    
-    // Update UI with current levels for debugging
-    setMicLevel(Math.round(gate.lastVolume * 1000) / 1000);
-    setGateStatus(gate.gateOpen);
-    
-    return outputData;
-  }, []);
-
-  const setupAudioProcessing = useCallback(async (): Promise<void> => {
-    // Reuse existing audio context if available and not closed
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      console.log('Reusing existing AudioContext');
-      return;
-    }
-
-    // Get microphone access with ENHANCED noise suppression constraints
-    if (!audioStreamRef.current) {
-      console.log('Requesting microphone access...');
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            sampleRate: 16000,
-            channelCount: 1,
-            // AGGRESSIVE noise suppression settings
-            echoCancellation: true,
-            noiseSuppression: true, 
-            autoGainControl: true,
-            // Browser-specific advanced constraints
-            ...({
-              googEchoCancellation: true,
-              googAutoGainControl: true,
-              googNoiseSuppression: true,
-              googHighpassFilter: true,
-              googNoiseSuppression2: true,
-              googEchoCancellation2: true,
-              googAutoGainControl2: true,
-              googDucking: false,
-              // Additional noise suppression settings
-              googAudioMirroring: false,
-              googDAEchoCancellation: true,
-              googNoiseReduction: true
-            } as any)
-          }
-        });
-
-        audioStreamRef.current = stream;
-        const audioTracks = stream.getAudioTracks();
-        console.log('✅ Audio stream acquired successfully');
-        console.log('Audio tracks:', audioTracks.length);
-        audioTracks.forEach((track, index) => {
-          console.log(`Track ${index}:`, {
-            label: track.label,
-            enabled: track.enabled,
-            muted: track.muted,
-            readyState: track.readyState,
-            settings: track.getSettings()
-          });
-        });
-      } catch (error) {
-        console.error('❌ Failed to get microphone access:', error);
-        console.error('Error details:', {
-          name: (error as any)?.name,
-          message: (error as any)?.message,
-          constraint: (error as any)?.constraint
-        });
-        throw new Error(`Microphone access denied: ${(error as any)?.message || 'Unknown error'}`);
-      }
-    }
-
-    // Create AudioContext with optimal settings (reuse if possible)
-    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-      console.log('Creating new AudioContext...');
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-        sampleRate: 16000,
-        latencyHint: 'interactive' // Optimize for low latency
-      });
-
-      audioContextRef.current = audioContext;
-      console.log('✅ AudioContext created:', {
-        state: audioContext.state,
-        sampleRate: audioContext.sampleRate,
-        currentTime: audioContext.currentTime
-      });
-    }
-
-    // Resume context if suspended
-    if (audioContextRef.current.state === 'suspended') {
-      console.log('Resuming suspended AudioContext...');
-      await audioContextRef.current.resume();
-      console.log('✅ AudioContext resumed, state:', audioContextRef.current.state);
-    }
-
-    // Create media stream source (reuse if possible)
-    if (!mediaStreamSourceRef.current && audioStreamRef.current) {
-      console.log('Creating MediaStreamSource...');
-      const mediaStreamSource = audioContextRef.current.createMediaStreamSource(audioStreamRef.current);
-      mediaStreamSourceRef.current = mediaStreamSource;
-      console.log('✅ MediaStreamSource created');
+      const level = sum / inputData.length;
+      setMicLevel(level);
       
-      // Test if we're getting any audio data
-      const testProcessor = audioContextRef.current.createScriptProcessor(1024, 1, 1);
-      testProcessor.onaudioprocess = (event) => {
-        const inputBuffer = event.inputBuffer;
-        const inputData = inputBuffer.getChannelData(0);
-        let sum = 0;
-        for (let i = 0; i < inputData.length; i++) {
-          sum += Math.abs(inputData[i]);
-        }
-        const average = sum / inputData.length;
-        if (average > 0.001) {
-          console.log('🎤 Audio input detected! Level:', average.toFixed(6));
-          testProcessor.disconnect();
-        }
-      };
-      mediaStreamSource.connect(testProcessor);
-      testProcessor.connect(audioContextRef.current.destination);
-      
-      // Clean up test processor after 5 seconds
-      setTimeout(() => {
-        try {
-          testProcessor.disconnect();
-          console.log('Test processor cleaned up');
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      }, 5000);
-    }
+      // Convert to 16-bit PCM and send to Gladia
+      const pcmData = float32ToPCM16(inputData);
+      websocketRef.current.send(pcmData);
+    };
+    
+    // Connect audio processing chain
+    mediaStreamSource.connect(scriptProcessor);
+    scriptProcessor.connect(audioContext.destination);
+    
+    console.log('Audio processing chain connected');
+  }, [float32ToPCM16]);
 
-    // Create gain node for volume control (reuse if possible)
-    if (!gainNodeRef.current) {
-      const gainNode = audioContextRef.current.createGain();
-      gainNode.gain.value = 1.8; // INCREASED to 1.8 - more amplification for better voice pickup
-      gainNodeRef.current = gainNode;
-    }
-
-    // Create script processor with optimized buffer size
-    if (!scriptProcessorRef.current) {
-      const scriptProcessor = audioContextRef.current.createScriptProcessor(4096, 1, 1); // Larger buffer for stability
-      scriptProcessorRef.current = scriptProcessor;
-
-      scriptProcessor.onaudioprocess = (event) => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && isRecording) {
-          const inputBuffer = event.inputBuffer;
-          const inputData = inputBuffer.getChannelData(0);
-
-          // Apply noise gate BEFORE other processing
-          const gatedData = applyNoiseGate(inputData);
-          
-          // Apply high-pass filter to remove low-frequency noise (rumble, HVAC, etc.)
-          const filteredData = new Float32Array(gatedData.length);
-          let lastSample = 0;
-          const alpha = 0.95; // LESS aggressive high-pass filtering - preserve more voice
-          
-          for (let i = 0; i < gatedData.length; i++) {
-            filteredData[i] = alpha * (filteredData[i - 1] || 0) + alpha * (gatedData[i] - lastSample);
-            lastSample = gatedData[i];
-          }
-
-          // Convert to 16-bit PCM
-          const pcmData = float32ToPCM16(filteredData);
-
-          // Send as binary data
-          wsRef.current.send(pcmData);
-        }
-      };
-    }
-
-    // Connect the audio processing chain (disconnect first to avoid duplicates)
-    try {
-      if (mediaStreamSourceRef.current && gainNodeRef.current && scriptProcessorRef.current) {
-        // Disconnect any existing connections
-        try {
-          mediaStreamSourceRef.current.disconnect();
-          gainNodeRef.current.disconnect();
-          scriptProcessorRef.current.disconnect();
-        } catch (e) {
-          // Ignore disconnect errors
-        }
-
-        // Reconnect with simplified chain (no compressor to avoid background amplification)
-        mediaStreamSourceRef.current
-          .connect(gainNodeRef.current)
-          .connect(scriptProcessorRef.current)
-          .connect(audioContextRef.current.destination);
-
-        console.log('Audio processing chain established with noise reduction');
-      }
-    } catch (error) {
-      console.error('Error setting up audio processing chain:', error);
-      throw error;
-    }
-  }, [float32ToPCM16, isRecording, applyNoiseGate]);
-
-  const pauseAudioProcessing = useCallback(() => {
-    // Pause by disconnecting the script processor from sending data
-    if (scriptProcessorRef.current) {
-      console.log('Pausing audio processing (keeping context alive)');
-      // We keep the context alive but stop processing audio in the callback
-    }
-  }, []);
-
-  const resumeAudioProcessing = useCallback(async () => {
-    // Resume by reconnecting and ensuring context is running
-    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-      await audioContextRef.current.resume();
-    }
-    console.log('Resuming audio processing');
-  }, []);
-
+  // Start recording
   const startRecording = useCallback(async () => {
-    if (isRecording) {
-      console.log('Already recording, skipping start request');
-      return;
-    }
-
-    console.log('Starting recording process...');
-
+    if (isRecording) return;
+    
+    console.log('=== STARTING RECORDING ===');
+    updateStatus('Starting...');
+    
     try {
-      lastEnabledTimeRef.current = Date.now();
+      // Step 1: Create Gladia session
+      updateStatus('Creating session...');
+      const session = await createGladiaSession();
       
-      // FORCE FRESH START - Close any existing audio context
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        console.log('🔧 Force closing existing AudioContext for fresh start');
-        await audioContextRef.current.close();
-        audioContextRef.current = null;
-        mediaStreamSourceRef.current = null;
-        gainNodeRef.current = null;
-        scriptProcessorRef.current = null;
-      }
-      
-      // Quick reconnection if we have existing infrastructure
-      if (isInitializedRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        console.log('Using quick resume with existing connection');
-        updateStatus('Quick resume...');
-        await resumeAudioProcessing();
-        setIsRecording(true);
-        updateStatus('Listening (resumed)...');
-        return;
-      }
-
-      updateStatus('Checking API key...');
-      if (!apiKey) {
-        throw new Error('No Gladia API key provided');
-      }
-
-      updateStatus('Initializing session...');
-      
-      // Initialize Gladia session (always create new to avoid stale sessions)
-      console.log('Creating new Gladia session...');
-      const session = await initializeGladiaSession();
-      sessionRef.current = session;
-      console.log('Session created, connecting WebSocket...');
-
-      updateStatus('Connecting to Gladia...');
-
-      // Connect WebSocket with the new session
+      // Step 2: Connect WebSocket
+      updateStatus('Connecting...');
       const ws = await connectWebSocket(session);
-      wsRef.current = ws;
-      console.log('WebSocket connected successfully');
-
-      updateStatus('Setting up audio processing...');
-
-      // Setup audio processing
-      await setupAudioProcessing();
-      await resumeAudioProcessing();
-      console.log('Audio processing setup complete');
-
+      websocketRef.current = ws;
+      
+      // Step 3: Get microphone
+      updateStatus('Getting microphone...');
+      const stream = await getMicrophoneAccess();
+      audioStreamRef.current = stream;
+      
+      // Step 4: Setup audio processing
+      updateStatus('Setting up audio...');
+      setupAudioProcessing(stream);
+      
+      // Update state
       setIsRecording(true);
-      isInitializedRef.current = true;
-      updateStatus('Listening (enhanced)...');
-      console.log('Voice recording started successfully');
+      updateStatus('Listening...');
+      
+      console.log('✅ Recording started successfully');
       
     } catch (error) {
-      console.error('Failed to start recording:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logError(`Failed to start: ${errorMessage}`);
-      updateStatus('Connection failed - Retrying...');
-      
-      // Clean up any partial state
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      sessionRef.current = null;
-      isInitializedRef.current = false;
-      setIsRecording(false);
-      
-      // Retry after delay if still enabled
-      setTimeout(() => {
-        if (isEnabled) {
-          console.log('Retrying voice recording start...');
-          startRecording();
-        }
-      }, 2000); // 2 second delay for retry
+      console.error('❌ Failed to start recording:', error);
+      logError(`Failed to start: ${error instanceof Error ? error.message : String(error)}`);
+      updateStatus('Failed to start');
+      cleanup();
     }
-  }, [isRecording, isEnabled, apiKey, initializeGladiaSession, connectWebSocket, setupAudioProcessing, resumeAudioProcessing, updateStatus, logError]);
+  }, [isRecording, createGladiaSession, connectWebSocket, getMicrophoneAccess, setupAudioProcessing, updateStatus, logError]);
 
-  const stopRecording = useCallback(async () => {
+  // Stop recording
+  const stopRecording = useCallback(() => {
     if (!isRecording) return;
-
-    updateStatus('Pausing...');
-
-    // Pause audio processing but keep infrastructure alive
-    pauseAudioProcessing();
-
-    setIsRecording(false);
-    updateStatus('Ready (balanced filtering)');
-  }, [isRecording, pauseAudioProcessing, updateStatus]);
-
-  const fullCleanup = useCallback(() => {
-    console.log('Performing full cleanup');
     
-    // Clean up audio processing nodes
+    console.log('=== STOPPING RECORDING ===');
+    updateStatus('Stopping...');
+    
+    cleanup();
+    setIsRecording(false);
+    setMicLevel(0);
+    updateStatus('Ready');
+    
+    console.log('✅ Recording stopped');
+  }, [isRecording, updateStatus]);
+
+  // Cleanup resources
+  const cleanup = useCallback(() => {
+    console.log('Cleaning up resources...');
+    
     if (scriptProcessorRef.current) {
       scriptProcessorRef.current.disconnect();
       scriptProcessorRef.current = null;
     }
-
-    if (gainNodeRef.current) {
-      gainNodeRef.current.disconnect();
-      gainNodeRef.current = null;
-    }
-
+    
     if (mediaStreamSourceRef.current) {
       mediaStreamSourceRef.current.disconnect();
       mediaStreamSourceRef.current = null;
     }
-
+    
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
-
-    // Clean up media stream
+    
     if (audioStreamRef.current) {
       audioStreamRef.current.getTracks().forEach(track => track.stop());
       audioStreamRef.current = null;
     }
-
-    // Clean up WebSocket
-    if (wsRef.current) {
-      if (wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'stop_recording' }));
+    
+    if (websocketRef.current) {
+      if (websocketRef.current.readyState === WebSocket.OPEN) {
+        websocketRef.current.close();
       }
-      wsRef.current.close();
-      wsRef.current = null;
+      websocketRef.current = null;
     }
-
-    sessionRef.current = null;
-    isInitializedRef.current = false;
   }, []);
+
+  // Handle isEnabled changes
+  useEffect(() => {
+    if (isEnabled && !isRecording) {
+      startRecording();
+    } else if (!isEnabled && isRecording) {
+      stopRecording();
+    }
+  }, [isEnabled, isRecording, startRecording, stopRecording]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      fullCleanup();
+      cleanup();
     };
-  }, [fullCleanup]);
-
-  // Intelligent management based on isEnabled
-  useEffect(() => {
-    if (reconnectionTimeoutRef.current) {
-      clearTimeout(reconnectionTimeoutRef.current);
-      reconnectionTimeoutRef.current = null;
-    }
-
-    if (isEnabled && !isRecording) {
-      // Immediate start or quick resume
-      startRecording();
-    } else if (!isEnabled && isRecording) {
-      // Pause instead of full stop for quick recovery
-      stopRecording();
-      
-      // Schedule full cleanup after 30 seconds of inactivity
-      reconnectionTimeoutRef.current = setTimeout(() => {
-        if (!isEnabled) {
-          fullCleanup();
-          updateStatus('Ready');
-        }
-      }, 30000);
-    }
-  }, [isEnabled, isRecording, startRecording, stopRecording, fullCleanup, updateStatus]);
-
-  // Check microphone permission status
-  useEffect(() => {
-    if (navigator.permissions) {
-      navigator.permissions.query({ name: 'microphone' as PermissionName })
-        .then(result => {
-          setMicPermission(result.state as any);
-          console.log('Microphone permission:', result.state);
-          
-          result.onchange = () => {
-            setMicPermission(result.state as any);
-            console.log('Microphone permission changed:', result.state);
-          };
-        })
-        .catch(err => {
-          console.log('Permission check not supported:', err);
-          setMicPermission('unknown');
-        });
-    }
-  }, []);
+  }, [cleanup]);
 
   return (
     <div style={{
@@ -726,7 +375,7 @@ export default function VoiceStreamer({
         width: '10px',
         height: '10px',
         borderRadius: '50%',
-        background: isRecording ? '#10b981' : isPersistentMode ? '#f59e0b' : '#6b7280',
+        background: isRecording ? '#10b981' : '#6b7280',
         animation: isRecording ? 'pulse 2s infinite' : 'none'
       }} />
       <span style={{ fontWeight: '500' }}>
@@ -741,228 +390,6 @@ export default function VoiceStreamer({
           gap: '4px'
         }}>
           <span>Level: {micLevel.toFixed(3)}</span>
-          <div style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            background: gateStatus ? '#10b981' : '#ef4444'
-          }} />
-        </div>
-      )}
-      {isRecording && (
-        <div style={{
-          fontSize: '10px',
-          opacity: 0.8,
-          background: 'rgba(16,185,129,0.2)',
-          padding: '2px 8px',
-          borderRadius: '10px',
-          color: '#10b981'
-        }}>
-          Filtered
-        </div>
-      )}
-      
-      {/* Sensitivity Controls */}
-      <button
-        onClick={() => setShowControls(!showControls)}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: 'white',
-          cursor: 'pointer',
-          fontSize: '12px',
-          opacity: 0.7
-        }}
-      >
-        ⚙️
-      </button>
-      
-      {showControls && (
-        <div style={{
-          position: 'absolute',
-          bottom: '100%',
-          left: '0',
-          background: 'rgba(0,0,0,0.95)',
-          padding: '10px',
-          borderRadius: '8px',
-          marginBottom: '10px',
-          minWidth: '200px',
-          border: '1px solid rgba(255,255,255,0.2)'
-        }}>
-          <div style={{ fontSize: '11px', marginBottom: '8px', color: '#10b981' }}>Sensitivity Controls</div>
-          <div style={{ fontSize: '10px', marginBottom: '5px' }}>Threshold: {noiseGateRef.current.threshold.toFixed(3)}</div>
-          <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
-            <button
-              onClick={() => {
-                noiseGateRef.current.threshold = Math.max(0.001, noiseGateRef.current.threshold - 0.002);
-              }}
-              style={{
-                background: '#10b981',
-                border: 'none',
-                color: 'white',
-                padding: '2px 6px',
-                borderRadius: '3px',
-                fontSize: '9px',
-                cursor: 'pointer'
-              }}
-            >
-              More Sensitive
-            </button>
-            <button
-              onClick={() => {
-                noiseGateRef.current.threshold = Math.min(0.05, noiseGateRef.current.threshold + 0.002);
-              }}
-              style={{
-                background: '#ef4444',
-                border: 'none',
-                color: 'white',
-                padding: '2px 6px',
-                borderRadius: '3px',
-                fontSize: '9px',
-                cursor: 'pointer'
-              }}
-            >
-              Less Sensitive
-            </button>
-          </div>
-          
-          {/* Microphone Test Button */}
-          <button
-            onClick={async () => {
-              setMicTestResults(['Testing microphone...']);
-              try {
-                // Test basic microphone access
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                setMicTestResults(prev => [...prev, '✅ Microphone access granted']);
-                
-                // Test audio tracks
-                const tracks = stream.getAudioTracks();
-                setMicTestResults(prev => [...prev, `✅ Found ${tracks.length} audio track(s)`]);
-                
-                if (tracks.length > 0) {
-                  const track = tracks[0];
-                  setMicTestResults(prev => [...prev, `✅ Track label: ${track.label || 'Unknown'}`, `✅ Track enabled: ${track.enabled}`, `✅ Track muted: ${track.muted}`]);
-                  
-                  // Test AudioContext
-                  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                  if (audioContext.state === 'suspended') {
-                    await audioContext.resume();
-                  }
-                  setMicTestResults(prev => [...prev, `✅ AudioContext state: ${audioContext.state}`]);
-                  
-                  // Test audio levels for 3 seconds
-                  const source = audioContext.createMediaStreamSource(stream);
-                  const processor = audioContext.createScriptProcessor(1024, 1, 1);
-                  let maxLevel = 0;
-                  let samples = 0;
-                  
-                  processor.onaudioprocess = (event) => {
-                    const inputData = event.inputBuffer.getChannelData(0);
-                    let sum = 0;
-                    for (let i = 0; i < inputData.length; i++) {
-                      sum += Math.abs(inputData[i]);
-                    }
-                    const average = sum / inputData.length;
-                    if (average > maxLevel) maxLevel = average;
-                    samples++;
-                  };
-                  
-                  source.connect(processor);
-                  processor.connect(audioContext.destination);
-                  
-                  setTimeout(() => {
-                    processor.disconnect();
-                    source.disconnect();
-                    stream.getTracks().forEach(track => track.stop());
-                    
-                    if (maxLevel > 0.001) {
-                      setMicTestResults(prev => [...prev, `✅ Audio detected! Max level: ${maxLevel.toFixed(6)}`, `✅ Processed ${samples} audio chunks`]);
-                    } else {
-                      setMicTestResults(prev => [...prev, `❌ No audio detected in 3 seconds`, `Max level was: ${maxLevel.toFixed(6)}`, 'Try speaking louder or check microphone']);
-                    }
-                  }, 3000);
-                  
-                  setMicTestResults(prev => [...prev, '🎤 Testing audio levels for 3 seconds...']);
-                }
-              } catch (error: any) {
-                setMicTestResults(prev => [...prev, `❌ Error: ${error.message}`]);
-              }
-            }}
-            style={{
-              background: '#3b82f6',
-              border: 'none',
-              color: 'white',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '9px',
-              cursor: 'pointer',
-              width: '100%',
-              marginTop: '5px'
-            }}
-          >
-            Test Microphone
-          </button>
-          
-          {/* Fix Microphone Button */}
-          <button
-            onClick={() => {
-              console.log('🔧 Running microphone diagnostic...');
-              fixMicrophoneIssue();
-            }}
-            style={{
-              background: '#ef4444',
-              border: 'none',
-              color: 'white',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '9px',
-              cursor: 'pointer',
-              width: '100%',
-              marginTop: '3px'
-            }}
-          >
-            Fix Microphone Issue
-          </button>
-          
-          {/* Test Results */}
-          {micTestResults.length > 0 && (
-            <div style={{
-              fontSize: '8px',
-              marginTop: '5px',
-              maxHeight: '100px',
-              overflow: 'auto',
-              background: 'rgba(0,0,0,0.5)',
-              padding: '5px',
-              borderRadius: '3px'
-            }}>
-              {micTestResults.map((result, index) => (
-                <div key={index} style={{ marginBottom: '2px' }}>{result}</div>
-              ))}
-            </div>
-          )}
-          <div style={{ fontSize: '9px', opacity: 0.7 }}>Green dot = mic active</div>
-          <div style={{ fontSize: '9px', opacity: 0.7, marginTop: '5px' }}>
-            Permission: {micPermission}
-          </div>
-          {micLevel === 0 && (
-            <div style={{ fontSize: '9px', color: '#ef4444', marginTop: '5px' }}>
-              ⚠️ No audio detected!
-              <br />Check mic permissions & hardware
-            </div>
-          )}
-        </div>
-      )}
-      
-      {isPersistentMode && !isRecording && (
-        <div style={{
-          fontSize: '10px',
-          opacity: 0.8,
-          background: 'rgba(245,158,11,0.2)',
-          padding: '2px 8px',
-          borderRadius: '10px',
-          color: '#f59e0b'
-        }}>
-          Quick Resume
         </div>
       )}
     </div>

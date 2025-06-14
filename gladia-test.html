@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gladia Voice Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .container {
+            text-align: center;
+        }
+        .status {
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .transcript {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            min-height: 100px;
+            text-align: left;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        button.stop {
+            background: #f44336;
+        }
+        .logs {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: left;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        .mic-level {
+            background: #333;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .level-bar {
+            background: #666;
+            height: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .level-fill {
+            background: #4CAF50;
+            height: 100%;
+            transition: width 0.1s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Gladia Voice-to-Text Test</h1>
+        
+        <div class="status" id="status">Ready to start</div>
+        
+        <div class="controls">
+            <button id="startBtn" onclick="startRecording()">Start Recording</button>
+            <button id="stopBtn" onclick="stopRecording()" disabled class="stop">Stop Recording</button>
+        </div>
+        
+        <div class="mic-level">
+            <div>Microphone Level:</div>
+            <div class="level-bar">
+                <div class="level-fill" id="levelFill" style="width: 0%"></div>
+            </div>
+            <div id="levelText">0.000</div>
+        </div>
+        
+        <div class="transcript" id="transcript">Transcripts will appear here...</div>
+        
+        <div class="logs" id="logs">Console logs will appear here...</div>
+    </div>
+
+    <script>
+        // Gladia API configuration
+        const GLADIA_API_KEY = '42f4192e-55d4-4a27-830a-d62c2cb32c03';
+        
+        // Global variables
+        let isRecording = false;
+        let websocket = null;
+        let audioStream = null;
+        let audioContext = null;
+        let scriptProcessor = null;
+        let mediaStreamSource = null;
+        
+        // UI elements
+        const statusEl = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const transcriptEl = document.getElementById('transcript');
+        const logsEl = document.getElementById('logs');
+        const levelFillEl = document.getElementById('levelFill');
+        const levelTextEl = document.getElementById('levelText');
+        
+        // Logging function
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] ${message}`;
+            console.log(logMessage);
+            logsEl.innerHTML += logMessage + '\n';
+            logsEl.scrollTop = logsEl.scrollHeight;
+        }
+        
+        // Update status
+        function updateStatus(status) {
+            statusEl.textContent = status;
+            log(`Status: ${status}`);
+        }
+        
+        // Update microphone level
+        function updateMicLevel(level) {
+            const percentage = Math.min(level * 1000, 100); // Scale to percentage
+            levelFillEl.style.width = percentage + '%';
+            levelTextEl.textContent = level.toFixed(3);
+        }
+        
+        // Create Gladia session
+        async function createGladiaSession() {
+            log('Creating Gladia session...');
+            
+            const config = {
+                // Audio settings
+                encoding: 'wav/pcm',
+                sample_rate: 16000,
+                bit_depth: 16,
+                channels: 1,
+                
+                // Model
+                model: 'solaria-1',
+                
+                // Language
+                language_config: {
+                    languages: ['en'],
+                    code_switching: false
+                },
+                
+                // Real-time settings
+                endpointing: 0.5,
+                maximum_duration_without_endpointing: 8,
+                
+                // Pre-processing
+                pre_processing: {
+                    audio_enhancer: true,
+                    speech_threshold: 0.5
+                },
+                
+                // Message config
+                messages_config: {
+                    receive_partial_transcripts: true,
+                    receive_final_transcripts: true,
+                    receive_speech_events: false,
+                    receive_pre_processing_events: false,
+                    receive_realtime_processing_events: false,
+                    receive_post_processing_events: false,
+                    receive_acknowledgments: false,
+                    receive_lifecycle_events: false
+                }
+            };
+            
+            log('Gladia config: ' + JSON.stringify(config, null, 2));
+            
+            try {
+                const response = await fetch('https://api.gladia.io/v2/live', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Gladia-Key': GLADIA_API_KEY
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                log(`Gladia API response: ${response.status} ${response.statusText}`);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Gladia API error: ${errorText}`);
+                }
+                
+                const session = await response.json();
+                log('Gladia session created: ' + JSON.stringify(session));
+                return session;
+                
+            } catch (error) {
+                log('ERROR creating Gladia session: ' + error.message);
+                throw error;
+            }
+        }
+        
+        // Connect to WebSocket
+        function connectWebSocket(session) {
+            return new Promise((resolve, reject) => {
+                log('Connecting to WebSocket: ' + session.url);
+                
+                const ws = new WebSocket(session.url);
+                
+                ws.onopen = () => {
+                    log('✅ WebSocket connected successfully');
+                    resolve(ws);
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log('WebSocket message: ' + JSON.stringify(data));
+                        
+                        if (data.type === 'transcript' && data.data && data.data.utterance) {
+                            const utterance = data.data.utterance;
+                            const text = utterance.text || '';
+                            const isFinal = data.data.is_final || false;
+                            const confidence = utterance.confidence || 0;
+                            
+                            if (text.trim()) {
+                                const transcriptText = `${isFinal ? '[FINAL]' : '[PARTIAL]'} (${confidence.toFixed(2)}): ${text}`;
+                                log('Transcript: ' + transcriptText);
+                                
+                                // Update transcript display
+                                if (isFinal) {
+                                    transcriptEl.innerHTML += '\n' + transcriptText;
+                                } else {
+                                    // Replace last line if partial
+                                    const lines = transcriptEl.innerHTML.split('\n');
+                                    if (lines[lines.length - 1].includes('[PARTIAL]')) {
+                                        lines[lines.length - 1] = transcriptText;
+                                    } else {
+                                        lines.push(transcriptText);
+                                    }
+                                    transcriptEl.innerHTML = lines.join('\n');
+                                }
+                                transcriptEl.scrollTop = transcriptEl.scrollHeight;
+                            }
+                        }
+                        
+                    } catch (error) {
+                        log('ERROR parsing WebSocket message: ' + error.message);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    log('❌ WebSocket error: ' + error);
+                    reject(error);
+                };
+                
+                ws.onclose = (event) => {
+                    log(`WebSocket closed: ${event.code} ${event.reason}`);
+                };
+                
+                // Connection timeout
+                setTimeout(() => {
+                    if (ws.readyState === WebSocket.CONNECTING) {
+                        ws.close();
+                        reject(new Error('WebSocket connection timeout'));
+                    }
+                }, 10000);
+            });
+        }
+        
+        // Get microphone access
+        async function getMicrophoneAccess() {
+            log('Requesting microphone access...');
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                
+                log('✅ Microphone access granted');
+                log('Audio tracks: ' + stream.getAudioTracks().length);
+                
+                stream.getAudioTracks().forEach((track, index) => {
+                    log(`Track ${index}: ${track.label} (enabled: ${track.enabled})`);
+                });
+                
+                return stream;
+                
+            } catch (error) {
+                log('❌ Microphone access failed: ' + error.message);
+                throw error;
+            }
+        }
+        
+        // Setup audio processing
+        function setupAudioProcessing(stream) {
+            log('Setting up audio processing...');
+            
+            // Create AudioContext
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: 16000
+            });
+            
+            log('AudioContext created: ' + audioContext.state);
+            
+            if (audioContext.state === 'suspended') {
+                audioContext.resume().then(() => {
+                    log('AudioContext resumed');
+                });
+            }
+            
+            // Create media stream source
+            mediaStreamSource = audioContext.createMediaStreamSource(stream);
+            log('MediaStreamSource created');
+            
+            // Create script processor
+            scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+            log('ScriptProcessor created (buffer size: 4096)');
+            
+            // Process audio data
+            scriptProcessor.onaudioprocess = (event) => {
+                if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+                
+                const inputBuffer = event.inputBuffer;
+                const inputData = inputBuffer.getChannelData(0);
+                
+                // Calculate audio level for visualization
+                let sum = 0;
+                for (let i = 0; i < inputData.length; i++) {
+                    sum += Math.abs(inputData[i]);
+                }
+                const level = sum / inputData.length;
+                updateMicLevel(level);
+                
+                // Convert to 16-bit PCM
+                const pcmData = float32ToPCM16(inputData);
+                
+                // Send to Gladia
+                websocket.send(pcmData);
+            };
+            
+            // Connect audio processing chain
+            mediaStreamSource.connect(scriptProcessor);
+            scriptProcessor.connect(audioContext.destination);
+            
+            log('Audio processing chain connected');
+        }
+        
+        // Convert Float32 to PCM16
+        function float32ToPCM16(float32Array) {
+            const buffer = new ArrayBuffer(float32Array.length * 2);
+            const view = new DataView(buffer);
+            let offset = 0;
+            
+            for (let i = 0; i < float32Array.length; i++, offset += 2) {
+                let sample = Math.max(-1, Math.min(1, float32Array[i]));
+                sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                view.setInt16(offset, sample, true); // little endian
+            }
+            
+            return buffer;
+        }
+        
+        // Start recording
+        async function startRecording() {
+            if (isRecording) return;
+            
+            log('=== STARTING RECORDING ===');
+            updateStatus('Starting...');
+            
+            try {
+                // Step 1: Create Gladia session
+                updateStatus('Creating Gladia session...');
+                const session = await createGladiaSession();
+                
+                // Step 2: Connect WebSocket
+                updateStatus('Connecting WebSocket...');
+                websocket = await connectWebSocket(session);
+                
+                // Step 3: Get microphone
+                updateStatus('Getting microphone access...');
+                audioStream = await getMicrophoneAccess();
+                
+                // Step 4: Setup audio processing
+                updateStatus('Setting up audio processing...');
+                setupAudioProcessing(audioStream);
+                
+                // Update UI
+                isRecording = true;
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                updateStatus('🎤 Recording... Speak now!');
+                
+                log('✅ Recording started successfully');
+                
+            } catch (error) {
+                log('❌ Failed to start recording: ' + error.message);
+                updateStatus('Failed to start: ' + error.message);
+                cleanup();
+            }
+        }
+        
+        // Stop recording
+        function stopRecording() {
+            if (!isRecording) return;
+            
+            log('=== STOPPING RECORDING ===');
+            updateStatus('Stopping...');
+            
+            cleanup();
+            
+            // Update UI
+            isRecording = false;
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            updateStatus('Stopped');
+            updateMicLevel(0);
+            
+            log('✅ Recording stopped');
+        }
+        
+        // Cleanup resources
+        function cleanup() {
+            log('Cleaning up resources...');
+            
+            if (scriptProcessor) {
+                scriptProcessor.disconnect();
+                scriptProcessor = null;
+                log('ScriptProcessor disconnected');
+            }
+            
+            if (mediaStreamSource) {
+                mediaStreamSource.disconnect();
+                mediaStreamSource = null;
+                log('MediaStreamSource disconnected');
+            }
+            
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close();
+                audioContext = null;
+                log('AudioContext closed');
+            }
+            
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => {
+                    track.stop();
+                    log('Audio track stopped: ' + track.label);
+                });
+                audioStream = null;
+            }
+            
+            if (websocket) {
+                if (websocket.readyState === WebSocket.OPEN) {
+                    websocket.close();
+                }
+                websocket = null;
+                log('WebSocket closed');
+            }
+        }
+        
+        // Initialize
+        log('Gladia Voice Test initialized');
+        log('API Key: ' + GLADIA_API_KEY.substring(0, 10) + '...');
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', cleanup);
+    </script>
+</body>
+</html>
