@@ -5,7 +5,6 @@ import VoiceStreamer from '@/components/VoiceStreamer';
 import { AvatarData } from '@/lib/readyplayerme';
 import { ChatMessage } from '@/lib/openai';
 import { LipSyncController } from '@/utils/lipSync';
-import * as THREE from 'three';
 
 interface ConversationState {
   messages: ChatMessage[];
