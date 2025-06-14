@@ -54,7 +54,8 @@ export default async function handler(
         res.end();
       } catch (streamError) {
         console.error('Streaming error:', streamError);
-        res.write(`data: ${JSON.stringify({ error: streamError.message })}\n\n`);
+        const errorMessage = streamError instanceof Error ? streamError.message : 'Unknown streaming error';
+        res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
         res.end();
       }
     } else {
