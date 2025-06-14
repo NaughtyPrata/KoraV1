@@ -33,7 +33,7 @@ export default function VoiceStreamer({
   const sessionRef = useRef<GladiaSession | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const noiseGateRef = useRef<{ threshold: number; lastVolume: number; gateOpen: boolean }>({
-    threshold: 0.02, // Noise gate threshold - only allow audio above this level
+    threshold: 0.015, // Slightly lower threshold - more responsive to your voice
     lastVolume: 0,
     gateOpen: false
   });
@@ -64,9 +64,9 @@ export default function VoiceStreamer({
       // Model selection - Solaria is the latest and most accurate
       model: 'solaria-1',
       
-      // Endpointing configuration - more conservative to avoid background pickup
-      endpointing: 0.8, // Increased from 0.3 to 0.8 seconds - requires longer pause to detect end
-      maximum_duration_without_endpointing: 10, // Increased from 8 to 10 seconds
+      // Endpointing configuration - moderately conservative
+      endpointing: 0.6, // Reduced from 0.8 to 0.6 seconds - more responsive but still filtered
+      maximum_duration_without_endpointing: 10, // Keep at 10 seconds
       
       // Language configuration
       language_config: {
@@ -74,10 +74,10 @@ export default function VoiceStreamer({
         code_switching: false // Disable since we're only using English
       },
       
-      // Pre-processing enhancements - LESS SENSITIVE
+      // Pre-processing enhancements - BALANCED SENSITIVITY
       pre_processing: {
         audio_enhancer: true, // Keep audio enhancement for noise reduction
-        speech_threshold: 0.7 // INCREASED from 0.4 to 0.7 - much less sensitive to background noise
+        speech_threshold: 0.6 // BALANCED: 0.6 - not too sensitive, not too strict
       },
       
       // Real-time processing configuration
@@ -167,8 +167,8 @@ export default function VoiceStreamer({
                 const text = utterance.text || '';
                 const confidence = utterance.confidence || 0;
                 
-                // More strict confidence filtering to reduce background noise pickup
-                if (text.trim() && confidence > 0.65) { // Increased from 0.5 to 0.65
+                // Balanced confidence filtering to allow your speech but filter background
+                if (text.trim() && confidence > 0.6) { // Balanced from 0.65 to 0.6
                   console.log('Transcript received:', { text, isFinal, confidence });
                   onTranscriptReceived(text, isFinal);
                 } else if (text.trim()) {
@@ -437,7 +437,7 @@ export default function VoiceStreamer({
 
       setIsRecording(true);
       isInitializedRef.current = true;
-      updateStatus('Listening (noise-filtered)...');
+      updateStatus('Listening (balanced)...');
       
     } catch (error) {
       logError(`Failed to start recording: ${error}`);
@@ -461,7 +461,7 @@ export default function VoiceStreamer({
     pauseAudioProcessing();
 
     setIsRecording(false);
-    updateStatus('Ready (background noise filtered)');
+    updateStatus('Ready (balanced filtering)');
   }, [isRecording, pauseAudioProcessing, updateStatus]);
 
   const fullCleanup = useCallback(() => {

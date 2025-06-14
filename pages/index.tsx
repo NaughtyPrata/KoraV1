@@ -464,14 +464,14 @@ export default function Home() {
         {/* Hidden audio element */}
         <audio ref={audioRef} style={{ display: 'none' }} />
 
-        {/* Status Indicator */}
-        <div className={`status-indicator ${conversationState.isPlaying ? 'speaking' : conversationState.isLoading ? 'listening' : ''}`}>
+        {/* DEBUG ONLY: Status Indicator - Turn on only when debugging */}
+        {/* <div className={`status-indicator ${conversationState.isPlaying ? 'speaking' : conversationState.isLoading ? 'listening' : ''}`}>
           {conversationState.isLoading && <div className="loading-spinner" />}
           {!audioEnabled && status.includes('Click') && (
             <div style={{ color: '#ff6b6b', fontWeight: 'bold' }}>🔊 </div>
           )}
           {status}
-        </div>
+        </div> */}
 
         {/* Voice Transcript Display */}
         {currentTranscript && (
@@ -651,15 +651,15 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Avatar Info */}
-        <div className="avatar-info">
+        {/* DEBUG ONLY: Avatar Info - Turn on only when debugging */}
+        {/* <div className="avatar-info">
           <div><strong>Status:</strong> {status}</div>
           {voiceEnabled && <div><strong>Voice:</strong> {voiceStatus}</div>}
           <div><strong>Messages:</strong> {conversationState.messages.length}</div>
           {avatarData && (
             <div><strong>Avatar:</strong> Loaded</div>
           )}
-        </div>
+        </div> */}
 
         {/* Conversation History (Optional) */}
         {conversationState.messages.length > 0 && (
