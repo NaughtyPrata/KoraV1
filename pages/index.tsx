@@ -403,44 +403,34 @@ export default function Home() {
               left: '50%',
               transform: 'translateX(-50%)',
               marginBottom: '8px',
-              background: gladiaStatus === 'Continuous Listening...' ? 'rgba(59, 130, 246, 0.9)' : conversationState.isPlaying ? 'rgba(34, 197, 94, 0.9)' : 'rgba(251, 191, 36, 0.9)',
+              background: gladiaStatus === 'Continuous Listening...' ? 'rgba(255, 255, 255, 0.15)' : conversationState.isPlaying ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.1)',
               color: 'white',
               padding: '8px 16px',
-              borderRadius: '20px',
+              borderRadius: '25px',
               fontSize: '14px',
               fontWeight: '500',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+              backdropFilter: 'blur(15px)',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              boxShadow: '4px 4px 20px rgba(0, 0, 0, 0.2)',
               whiteSpace: 'nowrap',
               zIndex: 200
             }}>
               <div style={{
                 width: '8px',
                 height: '8px',
-                background: '#ffffff',
+                background: gladiaStatus === 'Continuous Listening...' ? '#4ade80' : conversationState.isPlaying ? '#22c55e' : '#fbbf24',
                 borderRadius: '50%',
-                animation: (gladiaStatus === 'Continuous Listening...' || conversationState.isPlaying) ? 'pulse 1.5s infinite' : 'none'
+                animation: gladiaStatus === 'Continuous Listening...' ? 'pulse 1.5s infinite' : 'none'
               }} />
               {conversationState.isPlaying ? (
-                '🗣️ Kora is speaking...'
+                'Kora is speaking...'
               ) : gladiaStatus === 'Continuous Listening...' ? (
-                '🎤 Listening - speak now'
-              ) : gladiaStatus === 'Starting...' ? (
-                '⏳ Getting ready...'
-              ) : gladiaStatus === 'Creating session...' ? (
-                '🔄 Connecting...'
-              ) : gladiaStatus === 'Connecting...' ? (
-                '🔌 Establishing...'
-              ) : gladiaStatus === 'Getting microphone...' ? (
-                '🎤 Accessing mic...'
-              ) : gladiaStatus === 'Setting up audio...' ? (
-                '🔧 Setting up...'
+                'Ready to talk!'
               ) : (
-                `⚠️ ${gladiaStatus || 'Preparing...'}`
+                'Getting ready...'
               )}
             </div>
           )}
@@ -481,8 +471,8 @@ export default function Home() {
                 !isAvatarReady ? "Loading avatar..." : 
                 conversationState.isPlaying ? "Kora is speaking..." :
                 voiceEnabled ? (
-                  gladiaStatus === 'Continuous Listening...' ? "🎤 Listening... or type here" :
-                  gladiaStatus ? `${gladiaStatus}...` : "Getting ready..."
+                  gladiaStatus === 'Continuous Listening...' ? "Ready to talk! Speak or type here" :
+                  "Getting ready..."
                 ) : "Type your message here..."
               }
               disabled={conversationState.isLoading || !isAvatarReady}
