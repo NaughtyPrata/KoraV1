@@ -11,13 +11,15 @@ interface ConversationState {
   messages: ChatMessage[];
   isLoading: boolean;
   isPlaying: boolean;
+  isThinking: boolean;
 }
 
 export default function Home() {
   const [conversationState, setConversationState] = useState<ConversationState>({
     messages: [],
     isLoading: false,
-    isPlaying: false
+    isPlaying: false,
+    isThinking: false
   });
 
   const [inputText, setInputText] = useState('');
@@ -177,9 +179,11 @@ export default function Home() {
     setConversationState(prev => ({
       ...prev,
       messages: newMessages,
-      isLoading: true
+      isLoading: true,
+      isThinking: true
     }));
 
+    console.log('🤔 Started thinking state');
     setStatus('Thinking...');
 
     try {
@@ -237,9 +241,11 @@ export default function Home() {
       if (chunkedPlayerRef.current) {
         setConversationState(prev => ({
           ...prev,
-          isPlaying: true
+          isPlaying: true,
+          isThinking: false
         }));
         
+        console.log('🗣️ Stopped thinking state, starting speech');
         setStatus('Speaking...');
         
         // Convert the chunks to the format expected by ChunkedAudioPlayer
@@ -259,8 +265,10 @@ export default function Home() {
       setStatus('Error occurred');
       setConversationState(prev => ({
         ...prev,
-        isLoading: false
+        isLoading: false,
+        isThinking: false
       }));
+      console.log('❌ Stopped thinking state due to error');
     }
   }, [conversationState, initializeAudio, isAvatarReady]);
 
