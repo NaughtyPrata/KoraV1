@@ -395,6 +395,56 @@ export default function Home() {
 
         {/* Chat Input - New Horizontal Layout */}
         <div className="chat-input-container">
+          {/* Status Indicator integrated into input area */}
+          {isAvatarReady && voiceEnabled && (
+            <div style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              marginBottom: '8px',
+              background: gladiaStatus === 'Continuous Listening...' ? 'rgba(59, 130, 246, 0.9)' : conversationState.isPlaying ? 'rgba(34, 197, 94, 0.9)' : 'rgba(251, 191, 36, 0.9)',
+              color: 'white',
+              padding: '8px 16px',
+              borderRadius: '20px',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+              whiteSpace: 'nowrap',
+              zIndex: 200
+            }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                background: '#ffffff',
+                borderRadius: '50%',
+                animation: (gladiaStatus === 'Continuous Listening...' || conversationState.isPlaying) ? 'pulse 1.5s infinite' : 'none'
+              }} />
+              {conversationState.isPlaying ? (
+                '🗣️ Kora is speaking...'
+              ) : gladiaStatus === 'Continuous Listening...' ? (
+                '🎤 Listening - speak now'
+              ) : gladiaStatus === 'Starting...' ? (
+                '⏳ Getting ready...'
+              ) : gladiaStatus === 'Creating session...' ? (
+                '🔄 Connecting...'
+              ) : gladiaStatus === 'Connecting...' ? (
+                '🔌 Establishing...'
+              ) : gladiaStatus === 'Getting microphone...' ? (
+                '🎤 Accessing mic...'
+              ) : gladiaStatus === 'Setting up audio...' ? (
+                '🔧 Setting up...'
+              ) : (
+                `⚠️ ${gladiaStatus || 'Preparing...'}`
+              )}
+            </div>
+          )}
+          
           <div className="chat-input-form">
             {/* Mic Button */}
             {isAvatarReady && (
@@ -427,7 +477,14 @@ export default function Home() {
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={!isAvatarReady ? "Loading avatar..." : voiceEnabled ? "Voice input active - or type here..." : "Type your message here..."}
+              placeholder={
+                !isAvatarReady ? "Loading avatar..." : 
+                conversationState.isPlaying ? "Kora is speaking..." :
+                voiceEnabled ? (
+                  gladiaStatus === 'Continuous Listening...' ? "🎤 Listening... or type here" :
+                  gladiaStatus ? `${gladiaStatus}...` : "Getting ready..."
+                ) : "Type your message here..."
+              }
               disabled={conversationState.isLoading || !isAvatarReady}
               className="main-text-input"
             />
@@ -445,101 +502,6 @@ export default function Home() {
               </svg>
             </button>
           </div>
-        </div>
-
-        {/* Central Status Indicator - Prominent listening/speaking indicator */}
-        {isAvatarReady && (
-          <div style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 150,
-            pointerEvents: 'none'
-          }}>
-            {conversationState.isPlaying ? (
-              // Kora is speaking
-              <div style={{
-                background: 'rgba(34, 197, 94, 0.95)',
-                color: 'white',
-                padding: '20px 30px',
-                borderRadius: '50px',
-                fontSize: '18px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                backdropFilter: 'blur(15px)',
-                border: '2px solid rgba(34, 197, 94, 0.5)',
-                boxShadow: '0 8px 32px rgba(34, 197, 94, 0.4)',
-                animation: 'pulse 2s infinite'
-              }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  background: '#ffffff',
-                  borderRadius: '50%',
-                  animation: 'pulse 1s infinite'
-                }} />
-                🗣️ Kora is speaking...
-              </div>
-            ) : voiceEnabled ? (
-              // Listening mode - show actual Gladia status
-              <div style={{
-                background: gladiaStatus === 'Continuous Listening...' ? 'rgba(59, 130, 246, 0.95)' : 'rgba(251, 191, 36, 0.95)',
-                color: 'white',
-                padding: '20px 30px',
-                borderRadius: '50px',
-                fontSize: '18px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                backdropFilter: 'blur(15px)',
-                border: gladiaStatus === 'Continuous Listening...' ? '2px solid rgba(59, 130, 246, 0.5)' : '2px solid rgba(251, 191, 36, 0.5)',
-                boxShadow: gladiaStatus === 'Continuous Listening...' ? '0 8px 32px rgba(59, 130, 246, 0.4)' : '0 8px 32px rgba(251, 191, 36, 0.4)',
-                animation: gladiaStatus === 'Continuous Listening...' ? 'pulse 2s infinite' : 'none'
-              }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  background: '#ffffff',
-                  borderRadius: '50%',
-                  animation: gladiaStatus === 'Continuous Listening...' ? 'pulse 1.5s infinite' : 'none'
-                }} />
-                {gladiaStatus === 'Continuous Listening...' ? (
-                  <>🎤 Listening... You can speak now</>
-                ) : gladiaStatus === 'Starting...' ? (
-                  <>⏳ Getting ready...</>
-                ) : gladiaStatus === 'Creating session...' ? (
-                  <>🔄 Connecting to Gladia...</>
-                ) : gladiaStatus === 'Connecting...' ? (
-                  <>🔌 Establishing connection...</>
-                ) : gladiaStatus === 'Getting microphone...' ? (
-                  <>🎤 Accessing microphone...</>
-                ) : gladiaStatus === 'Setting up audio...' ? (
-                  <>🔧 Setting up audio...</>
-                ) : (
-                  <>⚠️ {gladiaStatus || 'Preparing...'}</>
-                )}
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        {/* Status Display */}
-        <div className="status-indicator">
-          {!isAvatarReady ? (
-            <span>🔄 {status}</span>
-          ) : conversationState.isLoading ? (
-            <span>🤔 {status}</span>
-          ) : conversationState.isPlaying ? (
-            <span>🗣️ Speaking...</span>
-          ) : voiceEnabled ? (
-            <span>🎤 Listening...</span>
-          ) : (
-            <span>💬 Ready to chat</span>
-          )}
         </div>
 
         {/* Current Chunk Display */}
