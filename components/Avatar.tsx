@@ -10,24 +10,30 @@ function Background() {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   
   useEffect(() => {
+    console.log('Background: Starting to load texture...');
     const loader = new THREE.TextureLoader();
     loader.load(
       '/images/background.png',
       (loadedTexture) => {
+        console.log('Background: Texture loaded successfully!', loadedTexture);
         setTexture(loadedTexture);
       },
-      undefined,
+      (progress) => {
+        console.log('Background: Loading progress:', progress);
+      },
       (error) => {
-        console.warn('Background image failed to load:', error);
+        console.error('Background: Image failed to load:', error);
+        console.log('Background: Creating fallback texture...');
         // Create a simple colored background as fallback
         const canvas = document.createElement('canvas');
         canvas.width = 512;
         canvas.height = 512;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.fillStyle = '#f0f0f0';
+          ctx.fillStyle = '#ff0000'; // Make it red so we can see if fallback is working
           ctx.fillRect(0, 0, 512, 512);
           const fallbackTexture = new THREE.CanvasTexture(canvas);
+          console.log('Background: Fallback texture created:', fallbackTexture);
           setTexture(fallbackTexture);
         }
       }
