@@ -7,43 +7,12 @@ import { LipSyncController } from '@/utils/lipSync';
 
 // Background component - will load image when available
 function Background() {
-  const [texture, setTexture] = useState<THREE.Texture | null>(null);
-  
-  useEffect(() => {
-    console.log('Background: Starting to load texture...');
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      '/images/background.png',
-      (loadedTexture) => {
-        console.log('Background: Texture loaded successfully!', loadedTexture);
-        setTexture(loadedTexture);
-      },
-      (progress) => {
-        console.log('Background: Loading progress:', progress);
-      },
-      (error) => {
-        console.error('Background: Image failed to load:', error);
-        console.log('Background: Creating fallback texture...');
-        // Create a simple colored background as fallback
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 512;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#ff0000'; // Make it red so we can see if fallback is working
-          ctx.fillRect(0, 0, 512, 512);
-          const fallbackTexture = new THREE.CanvasTexture(canvas);
-          console.log('Background: Fallback texture created:', fallbackTexture);
-          setTexture(fallbackTexture);
-        }
-      }
-    );
-  }, []);
+  const texture = useLoader(THREE.TextureLoader, '/images/background.png');
   
   return (
     <mesh position={[0, 1.71, -1.5]} scale={[2.96, 1.48, 1]}>
       <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial map={texture} color={texture ? 'white' : '#f0f0f0'} />
+      <meshBasicMaterial map={texture} />
     </mesh>
   );
 }
