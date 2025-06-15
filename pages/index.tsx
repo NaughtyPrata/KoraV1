@@ -32,6 +32,7 @@ export default function Home() {
   // Voice states
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [currentTranscript, setCurrentTranscript] = useState('');
+  const [gladiaStatus, setGladiaStatus] = useState<string>('');
   
   const audioRef = useRef<HTMLAudioElement>(null);
   const lipSyncRef = useRef<LipSyncController | null>(null);
@@ -342,6 +343,7 @@ export default function Home() {
             apiKey={process.env.GLADIA_API_KEY || '42f4192e-55d4-4a27-830a-d62c2cb32c03'}
             onTranscriptReceived={handleTranscriptReceived}
             onError={handleVoiceError}
+            onStatusChange={setGladiaStatus}
           />
         )}
 
@@ -444,6 +446,86 @@ export default function Home() {
             </button>
           </div>
         </div>
+
+        {/* Central Status Indicator - Prominent listening/speaking indicator */}
+        {isAvatarReady && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 150,
+            pointerEvents: 'none'
+          }}>
+            {conversationState.isPlaying ? (
+              // Kora is speaking
+              <div style={{
+                background: 'rgba(34, 197, 94, 0.95)',
+                color: 'white',
+                padding: '20px 30px',
+                borderRadius: '50px',
+                fontSize: '18px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                backdropFilter: 'blur(15px)',
+                border: '2px solid rgba(34, 197, 94, 0.5)',
+                boxShadow: '0 8px 32px rgba(34, 197, 94, 0.4)',
+                animation: 'pulse 2s infinite'
+              }}>
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  background: '#ffffff',
+                  borderRadius: '50%',
+                  animation: 'pulse 1s infinite'
+                }} />
+                🗣️ Kora is speaking...
+              </div>
+            ) : voiceEnabled ? (
+              // Listening mode - show actual Gladia status
+              <div style={{
+                background: gladiaStatus === 'Continuous Listening...' ? 'rgba(59, 130, 246, 0.95)' : 'rgba(251, 191, 36, 0.95)',
+                color: 'white',
+                padding: '20px 30px',
+                borderRadius: '50px',
+                fontSize: '18px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                backdropFilter: 'blur(15px)',
+                border: gladiaStatus === 'Continuous Listening...' ? '2px solid rgba(59, 130, 246, 0.5)' : '2px solid rgba(251, 191, 36, 0.5)',
+                boxShadow: gladiaStatus === 'Continuous Listening...' ? '0 8px 32px rgba(59, 130, 246, 0.4)' : '0 8px 32px rgba(251, 191, 36, 0.4)',
+                animation: gladiaStatus === 'Continuous Listening...' ? 'pulse 2s infinite' : 'none'
+              }}>
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  background: '#ffffff',
+                  borderRadius: '50%',
+                  animation: gladiaStatus === 'Continuous Listening...' ? 'pulse 1.5s infinite' : 'none'
+                }} />
+                {gladiaStatus === 'Continuous Listening...' ? (
+                  <>🎤 Listening... You can speak now</>
+                ) : gladiaStatus === 'Starting...' ? (
+                  <>⏳ Getting ready...</>
+                ) : gladiaStatus === 'Creating session...' ? (
+                  <>🔄 Connecting to Gladia...</>
+                ) : gladiaStatus === 'Connecting...' ? (
+                  <>🔌 Establishing connection...</>
+                ) : gladiaStatus === 'Getting microphone...' ? (
+                  <>🎤 Accessing microphone...</>
+                ) : gladiaStatus === 'Setting up audio...' ? (
+                  <>🔧 Setting up audio...</>
+                ) : (
+                  <>⚠️ {gladiaStatus || 'Preparing...'}</>
+                )}
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {/* Status Display */}
         <div className="status-indicator">
