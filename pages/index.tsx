@@ -38,6 +38,24 @@ export default function Home() {
   const lipSyncRef = useRef<LipSyncController | null>(null);
   const chunkedPlayerRef = useRef<ChunkedAudioPlayer | null>(null);
   const [currentChunkText, setCurrentChunkText] = useState<string>('');
+  
+  // Thinking state
+  const [isThinking, setIsThinking] = useState(false);
+  const [thinkingMessage, setThinkingMessage] = useState('');
+  
+  // Random thinking messages
+  const thinkingMessages = [
+    "Hmm, let's see...",
+    "Oh, interesting question!",
+    "Give me a moment to think...",
+    "That's a great point...",
+    "Let me consider this...",
+    "Ooh, I have some thoughts on this!",
+    "Processing your question...",
+    "Thinking, thinking...",
+    "This is fascinating...",
+    "Let me gather my thoughts..."
+  ];
 
   const handleAvatarLoaded = useCallback(async (data: AvatarData) => {
     setAvatarData(data);
@@ -177,6 +195,10 @@ export default function Home() {
       isLoading: true
     }));
 
+    // Start thinking state with random message
+    const randomThinking = thinkingMessages[Math.floor(Math.random() * thinkingMessages.length)];
+    setIsThinking(true);
+    setThinkingMessage(randomThinking);
     setStatus('Thinking...');
 
     try {
@@ -208,6 +230,7 @@ export default function Home() {
         isLoading: false
       }));
 
+      // Keep thinking state until speech starts
       setStatus('Generating chunked speech...');
 
       // Generate chunked speech
@@ -232,6 +255,10 @@ export default function Home() {
 
       // Load chunks into the chunked player
       if (chunkedPlayerRef.current) {
+        // Clear thinking state when speech starts
+        setIsThinking(false);
+        setThinkingMessage('');
+        
         setConversationState(prev => ({
           ...prev,
           isPlaying: true
@@ -325,6 +352,21 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
         {/* Lucide Icons CDN */}
         <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            @keyframes bounce {
+              0%, 20%, 50%, 80%, 100% {
+                transform: translateY(0);
+              }
+              40% {
+                transform: translateY(-10px);
+              }
+              60% {
+                transform: translateY(-5px);
+              }
+            }
+          `
+        }} />
       </Head>
 
       <main className="avatar-container" onClick={initializeAudio}>
@@ -496,8 +538,81 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Thinking Bubble Display */}
+        {isThinking && thinkingMessage && (
+          <div style={{
+            position: 'absolute',
+            top: '30px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            maxWidth: '500px',
+            zIndex: 1000,
+          }}>
+            {/* Thinking Bubble - Cloud style */}
+            <div style={{
+              background: 'white',
+              color: '#666',
+              padding: '20px 25px',
+              borderRadius: '25px',
+              fontSize: '20px',
+              textAlign: 'center',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+              border: '2px solid #ddd',
+              position: 'relative',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontWeight: '400',
+              fontStyle: 'italic',
+              lineHeight: '1.4',
+              minHeight: '60px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {/* Thinking bubble trailing circles */}
+              <div style={{
+                position: 'absolute',
+                bottom: '-25px',
+                left: '30px',
+                width: '16px',
+                height: '16px',
+                background: 'white',
+                borderRadius: '50%',
+                border: '2px solid #ddd',
+                animation: 'bounce 1.5s infinite'
+              }} />
+              <div style={{
+                position: 'absolute',
+                bottom: '-35px',
+                left: '20px',
+                width: '12px',
+                height: '12px',
+                background: 'white',
+                borderRadius: '50%',
+                border: '2px solid #ddd',
+                animation: 'bounce 1.5s infinite 0.2s'
+              }} />
+              <div style={{
+                position: 'absolute',
+                bottom: '-42px',
+                left: '12px',
+                width: '8px',
+                height: '8px',
+                background: 'white',
+                borderRadius: '50%',
+                border: '2px solid #ddd',
+                animation: 'bounce 1.5s infinite 0.4s'
+              }} />
+              
+              {/* Thinking text */}
+              <div>
+                {thinkingMessage}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Current Chunk Display */}
-        {currentChunkText && (
+        {currentChunkText && !isThinking && (
           (() => {
             // Generate random arrow position based on text content (ensures randomness, not sequence)
             const textHash = currentChunkText.split('').reduce((a, b) => {
