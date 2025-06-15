@@ -301,8 +301,8 @@ export default function Avatar(props: AvatarProps) {
       {/* Camera - Close-up head shot with slow movement */}
       <CameraController />
 
-              {/* Background - temporarily disabled for testing */}
-        {/* <Background /> */}
+      {/* Background */}
+      <Background />
 
       {/* Avatar - Positioned lower in the viewport */}
       <group position={[0, 0.1, 0]}>
