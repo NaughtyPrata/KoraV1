@@ -11,13 +11,15 @@ interface ConversationState {
   messages: ChatMessage[];
   isLoading: boolean;
   isPlaying: boolean;
+  isThinking: boolean;
 }
 
 export default function Home() {
   const [conversationState, setConversationState] = useState<ConversationState>({
     messages: [],
     isLoading: false,
-    isPlaying: false
+    isPlaying: false,
+    isThinking: false
   });
 
   const [inputText, setInputText] = useState('');
@@ -38,6 +40,33 @@ export default function Home() {
   const lipSyncRef = useRef<LipSyncController | null>(null);
   const chunkedPlayerRef = useRef<ChunkedAudioPlayer | null>(null);
   const [currentChunkText, setCurrentChunkText] = useState<string>('');
+  
+  // Thinking state
+  const [currentThinkingMessage, setCurrentThinkingMessage] = useState<string>('');
+  
+  // Random thinking messages
+  const thinkingMessages = [
+    "Hmm, let's see...",
+    "Oh, interesting question!",
+    "Give me a moment to think...",
+    "That's a good one!",
+    "Let me process that...",
+    "Ooh, I have some thoughts on this!",
+    "Thinking, thinking...",
+    "Ah, yes! I know about this!",
+    "Let me gather my thoughts...",
+    "This is fascinating!",
+    "Hold on, let me think...",
+    "Great question! Let me see...",
+    "Hmm, where do I start?",
+    "Oh! I have ideas about this!",
+    "Processing your question...",
+    "This reminds me of something...",
+    "Let me organize my thoughts...",
+    "Interesting perspective!",
+    "Give me just a sec...",
+    "Oh, this is exciting!"
+  ];
 
   const handleAvatarLoaded = useCallback(async (data: AvatarData) => {
     setAvatarData(data);
@@ -174,10 +203,15 @@ export default function Home() {
 
     const newMessages = [...conversationState.messages, userMessage];
 
+    // Start thinking state with random message
+    const randomThinkingMessage = thinkingMessages[Math.floor(Math.random() * thinkingMessages.length)];
+    setCurrentThinkingMessage(randomThinkingMessage);
+
     setConversationState(prev => ({
       ...prev,
       messages: newMessages,
-      isLoading: true
+      isLoading: true,
+      isThinking: true
     }));
 
     setStatus('Thinking...');
@@ -237,9 +271,11 @@ export default function Home() {
       if (chunkedPlayerRef.current) {
         setConversationState(prev => ({
           ...prev,
-          isPlaying: true
+          isPlaying: true,
+          isThinking: false  // Stop thinking when speech starts
         }));
         
+        setCurrentThinkingMessage(''); // Clear thinking message
         setStatus('Speaking...');
         
         // Convert the chunks to the format expected by ChunkedAudioPlayer
@@ -259,8 +295,10 @@ export default function Home() {
       setStatus('Error occurred');
       setConversationState(prev => ({
         ...prev,
-        isLoading: false
+        isLoading: false,
+        isThinking: false
       }));
+      setCurrentThinkingMessage(''); // Clear thinking message on error
     }
   }, [conversationState, initializeAudio, isAvatarReady]);
 
@@ -499,6 +537,102 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Thinking Bubble */}
+        {conversationState.isThinking && currentThinkingMessage && (
+          <div style={{
+            position: 'absolute',
+            top: '30px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            maxWidth: '500px',
+            zIndex: 1000,
+          }}>
+            {/* Thinking Cloud Bubble */}
+            <div style={{
+              background: 'white',
+              color: '#333',
+              padding: '20px 25px',
+              borderRadius: '25px',
+              fontSize: '22px',
+              textAlign: 'center',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+              border: '3px solid #333',
+              position: 'relative',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontWeight: '500',
+              lineHeight: '1.4',
+              minHeight: '60px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {/* Thinking cloud tail - three decreasing circles */}
+              <div style={{
+                position: 'absolute',
+                bottom: '-25px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  borderRadius: '50%',
+                  background: 'white',
+                  border: '3px solid #333'
+                }} />
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '50%',
+                  background: 'white',
+                  border: '3px solid #333'
+                }} />
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: 'white',
+                  border: '3px solid #333'
+                }} />
+              </div>
+              
+              {/* Thinking text with animated dots */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>{currentThinkingMessage}</span>
+                <div style={{ display: 'flex', gap: '2px' }}>
+                  <div style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: '#333',
+                    animation: 'bounce 1.4s infinite ease-in-out',
+                    animationDelay: '0s'
+                  }} />
+                  <div style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: '#333',
+                    animation: 'bounce 1.4s infinite ease-in-out',
+                    animationDelay: '0.2s'
+                  }} />
+                  <div style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: '#333',
+                    animation: 'bounce 1.4s infinite ease-in-out',
+                    animationDelay: '0.4s'
+                  }} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Current Chunk Display */}
         {currentChunkText && (
           (() => {
@@ -716,6 +850,17 @@ export default function Home() {
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        
+        @keyframes bounce {
+          0%, 80%, 100% { 
+            transform: scale(0);
+            opacity: 0.5;
+          }
+          40% { 
+            transform: scale(1);
+            opacity: 1;
+          }
         }
       `}</style>
     </>
