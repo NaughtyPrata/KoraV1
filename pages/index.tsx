@@ -206,6 +206,7 @@ export default function Home() {
     // Start thinking state with random message
     const randomThinkingMessage = thinkingMessages[Math.floor(Math.random() * thinkingMessages.length)];
     setCurrentThinkingMessage(randomThinkingMessage);
+    console.log('🤔 Starting thinking state:', { randomThinkingMessage, isThinking: true });
 
     setConversationState(prev => ({
       ...prev,
@@ -276,6 +277,7 @@ export default function Home() {
         }));
         
         setCurrentThinkingMessage(''); // Clear thinking message
+        console.log('🗣️ Stopping thinking state, starting speech');
         setStatus('Speaking...');
         
         // Convert the chunks to the format expected by ChunkedAudioPlayer
@@ -539,98 +541,107 @@ export default function Home() {
 
         {/* Thinking Bubble */}
         {conversationState.isThinking && currentThinkingMessage && (
-          <div style={{
-            position: 'absolute',
-            top: '30px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            maxWidth: '500px',
-            zIndex: 1000,
-          }}>
-            {/* Thinking Cloud Bubble */}
-            <div style={{
-              background: 'white',
-              color: '#333',
-              padding: '20px 25px',
-              borderRadius: '25px',
-              fontSize: '22px',
-              textAlign: 'center',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
-              border: '3px solid #333',
-              position: 'relative',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              fontWeight: '500',
-              lineHeight: '1.4',
-              minHeight: '60px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              {/* Thinking cloud tail - three decreasing circles */}
+          (() => {
+            console.log('🎨 Rendering thinking bubble:', { 
+              isThinking: conversationState.isThinking, 
+              message: currentThinkingMessage 
+            });
+            return (
               <div style={{
                 position: 'absolute',
-                bottom: '-25px',
+                top: '30px',
                 left: '50%',
                 transform: 'translateX(-50%)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
+                maxWidth: '500px',
+                zIndex: 1000,
               }}>
+                {/* Thinking Cloud Bubble */}
                 <div style={{
-                  width: '16px',
-                  height: '16px',
-                  borderRadius: '50%',
                   background: 'white',
-                  border: '3px solid #333'
-                }} />
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  borderRadius: '50%',
-                  background: 'white',
-                  border: '3px solid #333'
-                }} />
-                <div style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: 'white',
-                  border: '3px solid #333'
-                }} />
-              </div>
-              
-              {/* Thinking text with animated dots */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>{currentThinkingMessage}</span>
-                <div style={{ display: 'flex', gap: '2px' }}>
+                  color: '#333',
+                  padding: '20px 25px',
+                  borderRadius: '25px',
+                  fontSize: '22px',
+                  textAlign: 'center',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+                  border: '3px solid #333',
+                  position: 'relative',
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  fontWeight: '500',
+                  lineHeight: '1.4',
+                  minHeight: '60px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {/* Thinking cloud tail - three decreasing circles vertically */}
                   <div style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    background: '#333',
-                    animation: 'bounce 1.4s infinite ease-in-out',
-                    animationDelay: '0s'
-                  }} />
-                  <div style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    background: '#333',
-                    animation: 'bounce 1.4s infinite ease-in-out',
-                    animationDelay: '0.2s'
-                  }} />
-                  <div style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    background: '#333',
-                    animation: 'bounce 1.4s infinite ease-in-out',
-                    animationDelay: '0.4s'
-                  }} />
+                    position: 'absolute',
+                    bottom: '-35px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '2px'
+                  }}>
+                    <div style={{
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '50%',
+                      background: 'white',
+                      border: '3px solid #333'
+                    }} />
+                    <div style={{
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '50%',
+                      background: 'white',
+                      border: '3px solid #333'
+                    }} />
+                    <div style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: 'white',
+                      border: '3px solid #333'
+                    }} />
+                  </div>
+                  
+                  {/* Thinking text with animated dots */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>{currentThinkingMessage}</span>
+                    <div style={{ display: 'flex', gap: '2px' }}>
+                      <div style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: '#333',
+                        animation: 'bounce 1.4s infinite ease-in-out',
+                        animationDelay: '0s'
+                      }} />
+                      <div style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: '#333',
+                        animation: 'bounce 1.4s infinite ease-in-out',
+                        animationDelay: '0.2s'
+                      }} />
+                      <div style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: '#333',
+                        animation: 'bounce 1.4s infinite ease-in-out',
+                        animationDelay: '0.4s'
+                      }} />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            );
+          })()
         )}
 
         {/* Current Chunk Display */}
