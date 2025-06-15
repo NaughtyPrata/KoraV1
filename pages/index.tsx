@@ -512,7 +512,7 @@ export default function Home() {
               color: '#333',
               padding: '20px 25px',
               borderRadius: '25px',
-              fontSize: '18px',
+              fontSize: '22px',
               textAlign: 'center',
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
               border: '3px solid #333',

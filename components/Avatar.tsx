@@ -304,8 +304,8 @@ export default function Avatar(props: AvatarProps) {
       {/* Background */}
       <Background />
 
-      {/* Avatar - Positioned higher for better head view */}
-      <group position={[0, 0.15, 0]}>
+      {/* Avatar - Positioned lower in the viewport */}
+      <group position={[0, 0.1, 0]}>
         <AvatarModel {...props} />
       </group>
 
