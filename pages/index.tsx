@@ -500,41 +500,61 @@ export default function Home() {
         {currentChunkText && (
           <div style={{
             position: 'absolute',
-            bottom: '120px',
+            top: '30px',
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(34, 197, 94, 0.9)',
-            color: 'white',
-            padding: '15px 20px',
-            borderRadius: '15px',
-            fontSize: '16px',
-            maxWidth: '600px',
-            textAlign: 'center',
+            maxWidth: '500px',
             zIndex: 1000,
-            border: '1px solid rgba(34, 197, 94, 0.5)',
-            backdropFilter: 'blur(10px)',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)'
           }}>
-            <div style={{ 
-              fontSize: '12px', 
-              opacity: 0.7, 
-              marginBottom: '8px',
+            {/* Speech Bubble */}
+            <div style={{
+              background: 'white',
+              color: '#333',
+              padding: '20px 25px',
+              borderRadius: '25px',
+              fontSize: '18px',
+              textAlign: 'center',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+              border: '3px solid #333',
+              position: 'relative',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontWeight: '500',
+              lineHeight: '1.4',
+              minHeight: '60px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
+              justifyContent: 'center'
             }}>
+              {/* Speech bubble tail pointing down */}
               <div style={{
-                width: '8px',
-                height: '8px',
-                background: '#ffffff',
-                borderRadius: '50%',
-                animation: 'pulse 1s infinite'
+                position: 'absolute',
+                bottom: '-15px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '0',
+                height: '0',
+                borderLeft: '15px solid transparent',
+                borderRight: '15px solid transparent',
+                borderTop: '15px solid #333',
+                zIndex: 1
               }} />
-              Speaking...
-            </div>
-            <div style={{ fontWeight: '500' }}>
-              "{currentChunkText}"
+              <div style={{
+                position: 'absolute',
+                bottom: '-12px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '0',
+                height: '0',
+                borderLeft: '12px solid transparent',
+                borderRight: '12px solid transparent',
+                borderTop: '12px solid white',
+                zIndex: 2
+              }} />
+              
+              {/* Speech text */}
+              <div>
+                "{currentChunkText}"
+              </div>
             </div>
           </div>
         )}
