@@ -5,16 +5,9 @@ import * as THREE from 'three';
 import { AvatarData, loadAvatar, generateRandomAvatarId } from '@/lib/readyplayerme';
 import { LipSyncController } from '@/utils/lipSync';
 
-// Background component - will load image when available
+// Background component - production-safe version without Three.js texture loading
 function Background() {
-  const texture = useLoader(THREE.TextureLoader, '/images/background.png');
-  
-  return (
-    <mesh position={[0, 1.71, -1.5]} scale={[2.96, 1.48, 1]}>
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial map={texture} />
-    </mesh>
-  );
+  return null; // Temporarily disabled - background handled by CSS
 }
 
 // Static camera controller - no movement
