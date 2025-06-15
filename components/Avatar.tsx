@@ -5,9 +5,39 @@ import * as THREE from 'three';
 import { AvatarData, loadAvatar, generateRandomAvatarId } from '@/lib/readyplayerme';
 import { LipSyncController } from '@/utils/lipSync';
 
-// Background component - production-safe version without Three.js texture loading
+// Background component - production-safe Three.js background with error handling
 function Background() {
-  return null; // Temporarily disabled - background handled by CSS
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const loader = new THREE.TextureLoader();
+    
+    loader.load(
+      '/images/background.png',
+      (loadedTexture) => {
+        setTexture(loadedTexture);
+        setError(false);
+      },
+      undefined,
+      (err) => {
+        console.warn('Background texture failed to load, falling back to CSS:', err);
+        setError(true);
+      }
+    );
+  }, []);
+
+  // If texture loading failed, return null and let CSS handle it
+  if (error || !texture) {
+    return null;
+  }
+
+  return (
+    <mesh position={[0, 1.71, -1.5]} scale={[2.96, 1.48, 1]}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial map={texture} />
+    </mesh>
+  );
 }
 
 // Static camera controller - no movement
