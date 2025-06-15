@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Head from 'next/head';
 import Avatar from '@/components/Avatar';
+import Background from '@/components/Background';
 import VoiceStreamer from '@/components/VoiceStreamer';
 import { AvatarData } from '@/lib/readyplayerme';
 import { ChatMessage } from '@/lib/openai';
@@ -328,6 +329,9 @@ export default function Home() {
       </Head>
 
       <main className="avatar-container" onClick={initializeAudio}>
+        {/* Background */}
+        <Background />
+        
         {/* Avatar */}
         <Avatar
           avatarId={process.env.READYPLAYERME_AVATAR_URL}
