@@ -6,6 +6,7 @@ export interface VoiceStreamerProps {
   onStatusChange?: (status: string) => void;
   isEnabled: boolean;
   apiKey: string;
+  hideUI?: boolean;
 }
 
 export default function VoiceStreamer({ 
@@ -13,7 +14,8 @@ export default function VoiceStreamer({
   onError, 
   onStatusChange,
   isEnabled,
-  apiKey 
+  apiKey,
+  hideUI = false
 }: VoiceStreamerProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState('Ready');
@@ -498,47 +500,51 @@ export default function VoiceStreamer({
   }, [cleanup]);
 
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: '20px',
-      left: '20px',
-      background: 'rgba(0,0,0,0.9)',
-      color: 'white',
-      padding: '12px 18px',
-      borderRadius: '25px',
-      fontSize: '13px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      zIndex: 1000,
-      border: '1px solid rgba(255,255,255,0.1)',
-      backdropFilter: 'blur(10px)',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
-    }}>
-      <div style={{
-        width: '10px',
-        height: '10px',
-        borderRadius: '50%',
-        background: isRecording ? (isSpeaking ? '#ef4444' : '#10b981') : '#6b7280',
-        animation: isRecording ? 'pulse 2s infinite' : 'none'
-      }} />
-      <span style={{ fontWeight: '500' }}>
-        🎤 {status} {isSpeaking && isRecording ? '(Speaking)' : ''}
-      </span>
-      {isRecording && (
+    <>
+      {!hideUI && (
         <div style={{
-          fontSize: '10px',
-          opacity: 0.8,
+          position: 'fixed',
+          bottom: '20px',
+          left: '20px',
+          background: 'rgba(0,0,0,0.9)',
+          color: 'white',
+          padding: '12px 18px',
+          borderRadius: '25px',
+          fontSize: '13px',
           display: 'flex',
           alignItems: 'center',
-          gap: '4px'
+          gap: '12px',
+          zIndex: 1000,
+          border: '1px solid rgba(255,255,255,0.1)',
+          backdropFilter: 'blur(10px)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
         }}>
-          <span>Level: {micLevel.toFixed(3)}</span>
-          {transcriptBufferRef.current && (
-            <span>| Buffered: {transcriptBufferRef.current.length} chars</span>
+          <div style={{
+            width: '10px',
+            height: '10px',
+            borderRadius: '50%',
+            background: isRecording ? (isSpeaking ? '#ef4444' : '#10b981') : '#6b7280',
+            animation: isRecording ? 'pulse 2s infinite' : 'none'
+          }} />
+          <span style={{ fontWeight: '500' }}>
+            🎤 {status} {isSpeaking && isRecording ? '(Speaking)' : ''}
+          </span>
+          {isRecording && (
+            <div style={{
+              fontSize: '10px',
+              opacity: 0.8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              <span>Level: {micLevel.toFixed(3)}</span>
+              {transcriptBufferRef.current && (
+                <span>| Buffered: {transcriptBufferRef.current.length} chars</span>
+              )}
+            </div>
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }

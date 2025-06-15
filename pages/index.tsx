@@ -337,6 +337,7 @@ export default function Home() {
         />
 
         {/* Voice Streamer */}
+        {/* DEBUG: Gladia indicator on lower left - UI hidden for cleaner interface, but functionality preserved */}
         {isAvatarReady && (
           <VoiceStreamer
             isEnabled={voiceEnabled && !conversationState.isPlaying}
@@ -344,6 +345,7 @@ export default function Home() {
             onTranscriptReceived={handleTranscriptReceived}
             onError={handleVoiceError}
             onStatusChange={setGladiaStatus}
+            hideUI={true}
           />
         )}
 
@@ -637,6 +639,8 @@ export default function Home() {
         )}
 
         {/* Conversation History (Optional) */}
+        {/* DEBUG: Conversation panel on top right - commented out for cleaner UI */}
+        {/* 
         {conversationState.messages.length > 0 && (
           <div style={{
             position: 'absolute',
@@ -664,6 +668,7 @@ export default function Home() {
             ))}
           </div>
         )}
+        */}
       </main>
 
       <style jsx>{`
