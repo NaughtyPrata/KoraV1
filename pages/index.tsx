@@ -54,7 +54,27 @@ export default function Home() {
     "Processing your question...",
     "Thinking, thinking...",
     "This is fascinating...",
-    "Let me gather my thoughts..."
+    "Let me gather my thoughts...",
+    "Ahh... lemme think...",
+    "Oh...",
+    "Give me sec...",
+    "Hmm...",
+    "Oh wait...",
+    "Let me think about this...",
+    "Ok... hmmm...",
+    "Interesting...",
+    "Hold on a moment...",
+    "Let me process this...",
+    "Ooh, good question...",
+    "Thinking it through...",
+    "Give me just a sec...",
+    "Hmm, that's tricky...",
+    "Let me see here...",
+    "Oh, I know this one...",
+    "Wait, wait...",
+    "Lemme figure this out...",
+    "Hmm, how to put this...",
+    "Oh, that reminds me..."
   ];
 
   const handleAvatarLoaded = useCallback(async (data: AvatarData) => {
