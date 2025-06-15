@@ -290,8 +290,9 @@ export default function Home() {
 
   const handleSendMessage = useCallback(async () => {
     if (!inputText.trim()) return;
-    await processMessage(inputText);
-    setInputText('');
+    const messageToSend = inputText;
+    setInputText(''); // Clear immediately
+    await processMessage(messageToSend);
   }, [inputText, processMessage]);
 
   const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
