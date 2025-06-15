@@ -498,65 +498,78 @@ export default function Home() {
 
         {/* Current Chunk Display */}
         {currentChunkText && (
-          <div style={{
-            position: 'absolute',
-            top: '30px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            maxWidth: '500px',
-            zIndex: 1000,
-          }}>
-            {/* Speech Bubble */}
-            <div style={{
-              background: 'white',
-              color: '#333',
-              padding: '20px 25px',
-              borderRadius: '25px',
-              fontSize: '22px',
-              textAlign: 'center',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
-              border: '3px solid #333',
-              position: 'relative',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              fontWeight: '500',
-              lineHeight: '1.4',
-              minHeight: '60px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              {/* Speech bubble tail pointing down */}
+          (() => {
+            // Generate random arrow position based on text content (ensures randomness, not sequence)
+            const textHash = currentChunkText.split('').reduce((a, b) => {
+              a = ((a << 5) - a) + b.charCodeAt(0);
+              return a & a;
+            }, 0);
+            
+            const arrowPositions = ['25%', '50%', '75%']; // left, center, right
+            const randomArrowPosition = arrowPositions[Math.abs(textHash) % arrowPositions.length];
+            
+            return (
               <div style={{
                 position: 'absolute',
-                bottom: '-15px',
+                top: '30px',
                 left: '50%',
                 transform: 'translateX(-50%)',
-                width: '0',
-                height: '0',
-                borderLeft: '15px solid transparent',
-                borderRight: '15px solid transparent',
-                borderTop: '15px solid #333',
-                zIndex: 1
-              }} />
-              <div style={{
-                position: 'absolute',
-                bottom: '-12px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: '0',
-                height: '0',
-                borderLeft: '12px solid transparent',
-                borderRight: '12px solid transparent',
-                borderTop: '12px solid white',
-                zIndex: 2
-              }} />
-              
-              {/* Speech text */}
-              <div>
-                "{currentChunkText}"
+                maxWidth: '500px',
+                zIndex: 1000,
+              }}>
+                {/* Speech Bubble - Always Centered */}
+                <div style={{
+                  background: 'white',
+                  color: '#333',
+                  padding: '20px 25px',
+                  borderRadius: '25px',
+                  fontSize: '22px',
+                  textAlign: 'center',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+                  border: '3px solid #333',
+                  position: 'relative',
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  fontWeight: '500',
+                  lineHeight: '1.4',
+                  minHeight: '60px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {/* Speech bubble tail - random position pointing down */}
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '-15px',
+                    left: randomArrowPosition,
+                    transform: 'translateX(-50%)',
+                    width: '0',
+                    height: '0',
+                    borderLeft: '15px solid transparent',
+                    borderRight: '15px solid transparent',
+                    borderTop: '15px solid #333',
+                    zIndex: 1
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '-12px',
+                    left: randomArrowPosition,
+                    transform: 'translateX(-50%)',
+                    width: '0',
+                    height: '0',
+                    borderLeft: '12px solid transparent',
+                    borderRight: '12px solid transparent',
+                    borderTop: '12px solid white',
+                    zIndex: 2
+                  }} />
+                  
+                  {/* Speech text */}
+                  <div>
+                    "{currentChunkText}"
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })()
         )}
 
         {/* Countdown Overlay */}
