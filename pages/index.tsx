@@ -352,24 +352,41 @@ export default function Home() {
         {currentTranscript && (
           <div style={{
             position: 'absolute',
-            top: '50%',
+            bottom: '140px',
             left: '50%',
-            transform: 'translate(-50%, -50%)',
+            transform: 'translateX(-50%)',
             background: 'rgba(0, 0, 0, 0.8)',
             color: 'white',
-            padding: '20px',
-            borderRadius: '10px',
-            maxWidth: '80%',
+            padding: '15px 20px',
+            borderRadius: '15px',
+            fontSize: '16px',
+            maxWidth: '600px',
             textAlign: 'center',
             zIndex: 200,
+            border: '1px solid rgba(59, 130, 246, 0.5)',
             backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.2)'
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)'
           }}>
-            <div style={{ fontSize: '14px', opacity: 0.8, marginBottom: '8px' }}>
-              Voice Input:
+            <div style={{ 
+              fontSize: '12px', 
+              opacity: 0.7, 
+              marginBottom: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                background: '#3b82f6',
+                borderRadius: '50%',
+                animation: 'pulse 2s infinite'
+              }} />
+              Listening...
             </div>
-            <div style={{ fontSize: '18px', fontWeight: '500' }}>
-              {currentTranscript}
+            <div style={{ fontWeight: '500' }}>
+              "{currentTranscript}"
             </div>
           </div>
         )}
