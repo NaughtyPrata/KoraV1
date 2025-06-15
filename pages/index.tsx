@@ -38,6 +38,24 @@ export default function Home() {
   const lipSyncRef = useRef<LipSyncController | null>(null);
   const chunkedPlayerRef = useRef<ChunkedAudioPlayer | null>(null);
   const [currentChunkText, setCurrentChunkText] = useState<string>('');
+  
+  // Thinking state
+  const [isThinking, setIsThinking] = useState(false);
+  const [thinkingMessage, setThinkingMessage] = useState('');
+  
+  // Random thinking messages
+  const thinkingMessages = [
+    "Hmm, let's see...",
+    "Oh, interesting question!",
+    "Let me think about that...",
+    "That's a great point...",
+    "I'm processing this...",
+    "Give me a moment...",
+    "Thinking it through...",
+    "Let me consider this...",
+    "Interesting perspective...",
+    "I see what you mean..."
+  ];
 
   const handleAvatarLoaded = useCallback(async (data: AvatarData) => {
     setAvatarData(data);
@@ -161,6 +179,9 @@ export default function Home() {
   const processMessage = useCallback(async (messageText: string) => {
     if (!messageText.trim() || conversationState.isLoading || !isAvatarReady) return;
 
+    // Clear input immediately
+    setInputText('');
+
     // Initialize audio on first interaction
     await initializeAudio();
 
@@ -177,6 +198,10 @@ export default function Home() {
       isLoading: true
     }));
 
+    // Start thinking state with random message
+    const randomThinking = thinkingMessages[Math.floor(Math.random() * thinkingMessages.length)];
+    setThinkingMessage(randomThinking);
+    setIsThinking(true);
     setStatus('Thinking...');
 
     try {
@@ -247,6 +272,9 @@ export default function Home() {
           mimeType: chunk.mimeType
         }));
 
+        // Stop thinking state when speech starts
+        setIsThinking(false);
+        
         chunkedPlayerRef.current.loadChunks(audioChunks);
         await chunkedPlayerRef.current.play();
       }
@@ -254,6 +282,7 @@ export default function Home() {
     } catch (error) {
       console.error('Error in conversation:', error);
       setStatus('Error occurred');
+      setIsThinking(false); // Clear thinking state on error
       setConversationState(prev => ({
         ...prev,
         isLoading: false
@@ -264,7 +293,7 @@ export default function Home() {
   const handleSendMessage = useCallback(async () => {
     if (!inputText.trim()) return;
     await processMessage(inputText);
-    setInputText('');
+    // Input is already cleared in processMessage
   }, [inputText, processMessage]);
 
   const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
@@ -572,6 +601,93 @@ export default function Home() {
           })()
         )}
 
+        {/* Thinking Bubble */}
+        {isThinking && thinkingMessage && (
+          <div style={{
+            position: 'absolute',
+            top: '30px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            maxWidth: '500px',
+            zIndex: 1000,
+          }}>
+            {/* Thinking Bubble - Cloud style with trailing circles */}
+            <div style={{
+              background: 'white',
+              color: '#333',
+              padding: '20px 25px',
+              borderRadius: '25px',
+              fontSize: '22px',
+              textAlign: 'center',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+              border: '3px solid #333',
+              position: 'relative',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontWeight: '500',
+              lineHeight: '1.4',
+              minHeight: '60px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {/* Thinking bubble trailing circles (cloud tail) */}
+              <div style={{
+                position: 'absolute',
+                bottom: '-25px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                gap: '4px',
+                alignItems: 'flex-end'
+              }}>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  background: 'white',
+                  border: '3px solid #333',
+                  borderRadius: '50%'
+                }} />
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  background: 'white',
+                  border: '3px solid #333',
+                  borderRadius: '50%'
+                }} />
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  background: 'white',
+                  border: '3px solid #333',
+                  borderRadius: '50%'
+                }} />
+              </div>
+              
+              {/* Thinking text with animated dots */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>{thinkingMessage}</span>
+                <span style={{
+                  display: 'inline-flex',
+                  gap: '2px'
+                }}>
+                  <span style={{
+                    animation: 'bounce 1.4s infinite',
+                    animationDelay: '0s'
+                  }}>.</span>
+                  <span style={{
+                    animation: 'bounce 1.4s infinite',
+                    animationDelay: '0.2s'
+                  }}>.</span>
+                  <span style={{
+                    animation: 'bounce 1.4s infinite',
+                    animationDelay: '0.4s'
+                  }}>.</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Countdown Overlay */}
         {!isAvatarReady && (
           <div style={{
@@ -713,6 +829,17 @@ export default function Home() {
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        
+        @keyframes bounce {
+          0%, 80%, 100% { 
+            transform: translateY(0); 
+            opacity: 0.7;
+          }
+          40% { 
+            transform: translateY(-10px); 
+            opacity: 1;
+          }
         }
       `}</style>
     </>
