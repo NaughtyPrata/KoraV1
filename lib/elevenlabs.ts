@@ -29,7 +29,7 @@ export async function generateSpeech(
     const voiceSettings: VoiceSettings = {
       stability: 0.6,
       similarity_boost: 0.75,
-      style: 0.3,
+      style: 0.6,
       use_speaker_boost: true
     };
 
