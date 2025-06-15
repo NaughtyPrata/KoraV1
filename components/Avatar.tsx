@@ -7,12 +7,37 @@ import { LipSyncController } from '@/utils/lipSync';
 
 // Background component - will load image when available
 function Background() {
-  const texture = useLoader(THREE.TextureLoader, '/images/background.png');
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  
+  useEffect(() => {
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      '/images/background.png',
+      (loadedTexture) => {
+        setTexture(loadedTexture);
+      },
+      undefined,
+      (error) => {
+        console.warn('Background image failed to load:', error);
+        // Create a simple colored background as fallback
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#f0f0f0';
+          ctx.fillRect(0, 0, 512, 512);
+          const fallbackTexture = new THREE.CanvasTexture(canvas);
+          setTexture(fallbackTexture);
+        }
+      }
+    );
+  }, []);
   
   return (
     <mesh position={[0, 1.71, -1.5]} scale={[2.96, 1.48, 1]}>
       <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial map={texture} />
+      <meshBasicMaterial map={texture} color={texture ? 'white' : '#f0f0f0'} />
     </mesh>
   );
 }
