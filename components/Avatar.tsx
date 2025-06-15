@@ -7,7 +7,7 @@ import { LipSyncController } from '@/utils/lipSync';
 
 // Background component - will load image when available
 function Background() {
-  const texture = useLoader(THREE.TextureLoader, '/images/background.jpg');
+  const texture = useLoader(THREE.TextureLoader, '/images/background.png');
   
   return (
     <mesh position={[0, 1.71, -1.5]} scale={[2.96, 1.48, 1]}>
