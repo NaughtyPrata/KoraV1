@@ -428,7 +428,7 @@ export default function Home() {
               {conversationState.isPlaying ? (
                 'Kora is speaking...'
               ) : gladiaStatus === 'Continuous Listening...' ? (
-                'Ready to talk!'
+                'Kora is now listening'
               ) : (
                 'Getting ready...'
               )}
@@ -471,7 +471,7 @@ export default function Home() {
                 !isAvatarReady ? "Loading avatar..." : 
                 conversationState.isPlaying ? "Kora is speaking..." :
                 voiceEnabled ? (
-                  gladiaStatus === 'Continuous Listening...' ? "Ready to talk! Speak or type here" :
+                  gladiaStatus === 'Continuous Listening...' ? "Kora is listening - speak or type here" :
                   "Getting ready..."
                 ) : "Type your message here..."
               }
